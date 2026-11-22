@@ -1,0 +1,29 @@
+# Render Blueprint -- single Docker web service serving the API *and* the
+# built React SPA, so the whole demo lives at one shareable URL.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: myshop-demo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false          # paste your host key in the dashboard (secret)
+      - key: ADMIN_PASSCODE
+        sync: false          # passcode for /admin + "all sessions" logs
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OPENROUTER_APP_NAME
+        value: myshop-demo
+      - key: MAX_DAILY_SPEND_USD
+        value: "2.0"
+      - key: SESSION_MESSAGE_CAP
+        value: "40"
+      - key: DATA_DIR
+        value: /app/data

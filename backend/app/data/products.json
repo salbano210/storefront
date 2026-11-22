@@ -1,0 +1,39 @@
+{
+  "products": [
+    {
+      "name": "Barrier Repair Serum",
+      "sku": "GT-SERUM-001",
+      "description": "Ceramide + panthenol serum for compromised skin barriers. Hero gifting SKU.",
+      "eligible": true,
+      "retail_price": 68
+    },
+    {
+      "name": "Hydrating Cleanser",
+      "sku": "GT-CLEANSER-002",
+      "description": "Non-stripping gel cleanser with glycerin and oat. High-volume gifting SKU.",
+      "eligible": true,
+      "retail_price": 34
+    },
+    {
+      "name": "Overnight Recovery Mask",
+      "sku": "GT-MASK-003",
+      "description": "Leave-on overnight mask with squalane and peptides.",
+      "eligible": true,
+      "retail_price": 52
+    },
+    {
+      "name": "Vitamin C Brightening Drops",
+      "sku": "GT-DROPS-004",
+      "description": "15% THD ascorbate brightening drops. Launch SKU for spring campaigns.",
+      "eligible": true,
+      "retail_price": 74
+    },
+    {
+      "name": "Limited Edition Holiday Kit",
+      "sku": "GT-KIT-099",
+      "description": "Seasonal three-piece set. Inventory reserved for paid campaigns only -- not giftable.",
+      "eligible": false,
+      "retail_price": 145
+    }
+  ]
+}

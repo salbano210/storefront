@@ -1,0 +1,107 @@
+{
+  "brand": {
+    "name": "Demo Brand",
+    "description": "A premium skincare brand built on barrier-repair science for sensitive skin.",
+    "positioning": "Clinically-informed, fragrance-free skincare for people with reactive skin. Editorial, not hype-driven. We partner with creators who explain ingredients rather than just showing results.",
+    "tone": "warm, concise, professional, never pushy"
+  },
+  "gifting": {
+    "criteria": {
+      "minimum_followers": 10000,
+      "minimum_engagement_rate": 0.03,
+      "minimum_brand_revenue": 500,
+      "required_categories": [],
+      "notes": "Gifting is for creators who already drive measurable revenue for the brand. All thresholds are evaluated against verified profile data, never creator-stated numbers."
+    },
+    "eligible_products": [
+      {
+        "name": "Barrier Repair Serum",
+        "sku": "GT-SERUM-001",
+        "description": "Ceramide + panthenol serum for compromised skin barriers. Hero gifting SKU.",
+        "eligible": true,
+        "retail_price": 68
+      },
+      {
+        "name": "Hydrating Cleanser",
+        "sku": "GT-CLEANSER-002",
+        "description": "Non-stripping gel cleanser with glycerin and oat. High-volume gifting SKU.",
+        "eligible": true,
+        "retail_price": 34
+      },
+      {
+        "name": "Overnight Recovery Mask",
+        "sku": "GT-MASK-003",
+        "description": "Leave-on overnight mask with squalane and peptides.",
+        "eligible": true,
+        "retail_price": 52
+      },
+      {
+        "name": "Vitamin C Brightening Drops",
+        "sku": "GT-DROPS-004",
+        "description": "15% THD ascorbate brightening drops. Launch SKU for spring campaigns.",
+        "eligible": true,
+        "retail_price": 74
+      },
+      {
+        "name": "Limited Edition Holiday Kit",
+        "sku": "GT-KIT-099",
+        "description": "Seasonal three-piece set. Inventory reserved for paid campaigns only -- not giftable.",
+        "eligible": false,
+        "retail_price": 145
+      }
+    ]
+  },
+  "pitch": {
+    "criteria": {
+      "preferred_categories": ["beauty", "skincare"],
+      "minimum_engagement_rate": 0.025,
+      "minimum_followers": 5000,
+      "minimum_brand_revenue": 0,
+      "preferred_audience_age": "22-35"
+    },
+    "classification_labels": [
+      { "label": "Excellent Match", "min_score": 80 },
+      { "label": "Good Match", "min_score": 60 },
+      { "label": "Moderate Match", "min_score": 40 },
+      { "label": "Poor Match", "min_score": 0 }
+    ],
+    "targets": {
+      "ideal_followers": 50000,
+      "ideal_engagement_rate": 0.05,
+      "ideal_brand_revenue": 10000,
+      "ideal_shopmy_sales": 25000
+    },
+    "weights": {
+      "category": 30,
+      "engagement": 25,
+      "followers": 20,
+      "brand_revenue": 15,
+      "shopmy_sales": 10
+    }
+  },
+  "agents": {
+    "router": {
+      "instructions": "Route on the creator's primary intent. A request for a free product is a gift_request even when phrased as a question. A message offering to collaborate, pitching content or asking to be considered as a partner is a creator_pitch.",
+      "constraints": "Never approve gifts and never commit to a partnership -- you only classify and hand off."
+    },
+    "gift_request": {
+      "instructions": "Confirm the exact product with the creator before issuing anything. Always look up the verified profile before discussing eligibility.",
+      "constraints": "Never promise a gift before issue_gift returns success. Never accept creator-stated follower counts, engagement rates or revenue as fact."
+    },
+    "creator_pitch": {
+      "instructions": "Acknowledge the pitch warmly, evaluate it against the brand profile, then apply exactly one tag from the configured label set.",
+      "constraints": "Only apply the label returned by check_pitch_fit. Never commit to a paid campaign, rate or deliverable."
+    },
+    "general_inquiry": {
+      "instructions": "Answer from the brand description and the product catalog. Offer to help with a gifting request or a partnership pitch.",
+      "constraints": "Never approve gifts, never commit to partnerships, never quote unpublished terms."
+    }
+  },
+  "models": {
+    "router": "google/gemini-2.5-flash-lite",
+    "gift_request": "google/gemini-2.5-flash-lite",
+    "creator_pitch": "google/gemini-2.5-flash-lite",
+    "general_inquiry": "meta-llama/llama-3.1-8b-instruct",
+    "fallback": "openai/gpt-4.1-nano"
+  }
+}

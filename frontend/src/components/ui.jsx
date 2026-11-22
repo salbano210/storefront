@@ -1,0 +1,75 @@
+import { useState } from 'react'
+
+export function Avatar({ src, initials, size = 46 }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <span
+      className="avatar"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.34) }}
+    >
+      <span className="avatar-initials">{initials}</span>
+      {src && !failed && (
+        <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+      )}
+    </span>
+  )
+}
+
+export function Chip({ children, tone = 'neutral', title }) {
+  return (
+    <span className={`chip chip-${tone}`} title={title}>
+      {children}
+    </span>
+  )
+}
+
+export function Badge({ children, tone = 'neutral' }) {
+  return <span className={`badge badge-${tone}`}>{children}</span>
+}
+
+export function Spinner({ label }) {
+  return (
+    <span className="spinner-wrap">
+      <span className="spinner" />
+      {label && <span className="spinner-label">{label}</span>}
+    </span>
+  )
+}
+
+export function EmptyState({ title, children, action }) {
+  return (
+    <div className="empty">
+      <h3>{title}</h3>
+      {children && <p>{children}</p>}
+      {action}
+    </div>
+  )
+}
+
+export function JsonBlock({ value, label = 'JSON', open = false }) {
+  const [expanded, setExpanded] = useState(open)
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  return (
+    <div className="json">
+      <button type="button" className="json-toggle" onClick={() => setExpanded((v) => !v)}>
+        {expanded ? '▾' : '▸'} {label}
+      </button>
+      {expanded && <pre className="json-body">{text}</pre>}
+    </div>
+  )
+}
+
+export function ErrorNote({ error, onRetry }) {
+  if (!error) return null
+  return (
+    <div className="error-note" role="alert">
+      <strong>{error.code === 'admin_passcode_required' ? 'Passcode required' : 'Something went wrong'}</strong>
+      <span>{error.message}</span>
+      {onRetry && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onRetry}>
+          Retry
+        </button>
+      )}
+    </div>
+  )
+}

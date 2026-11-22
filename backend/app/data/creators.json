@@ -1,0 +1,129 @@
+{
+  "creators": [
+    {
+      "id": "creator_001",
+      "name": "Jessica Miller",
+      "handle": "@jessicamiller",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Jessica&backgroundColor=ffe8d6",
+      "initials": "JM",
+      "followers": 128400,
+      "engagement_rate": 0.048,
+      "categories": ["beauty", "skincare", "wellness"],
+      "audience": {
+        "primary_age_range": "25-34",
+        "age_breakdown": { "18-24": 0.18, "25-34": 0.44, "35-44": 0.26, "45+": 0.12 },
+        "top_gender": "female",
+        "top_locations": ["United States", "Canada"]
+      },
+      "primary_age_range": "25-34",
+      "brand_attributed_revenue": 12400,
+      "shopmy_sales": 38400,
+      "previous_gifts": [
+        { "product": "Overnight Recovery Mask", "sku": "GT-MASK-003", "date": "2025-09-12", "status": "delivered" }
+      ],
+      "shipping_address": "123 Example Street, Boston, MA 02110",
+      "content_style": "Editorial GRWM reels with ingredient breakdowns",
+      "tagline": "Skincare science, minus the hype",
+      "bio": "Licensed esthetician turned full-time creator. Six years of ingredient-led reviews and barrier-repair deep dives."
+    },
+    {
+      "id": "creator_002",
+      "name": "Marcus Chen",
+      "handle": "@marcusmoves",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Marcus&backgroundColor=dceef5",
+      "initials": "MC",
+      "followers": 62100,
+      "engagement_rate": 0.036,
+      "categories": ["fitness", "wellness", "lifestyle"],
+      "audience": {
+        "primary_age_range": "25-34",
+        "age_breakdown": { "18-24": 0.22, "25-34": 0.41, "35-44": 0.24, "45+": 0.13 },
+        "top_gender": "male",
+        "top_locations": ["United States"]
+      },
+      "primary_age_range": "25-34",
+      "brand_attributed_revenue": 3400,
+      "shopmy_sales": 7200,
+      "previous_gifts": [],
+      "shipping_address": "88 Harbor Avenue, Austin, TX 78701",
+      "content_style": "High-energy training reels plus recovery and sleep routines",
+      "tagline": "Train hard, recover harder",
+      "bio": "Certified strength coach. Recovery, sleep and skin-barrier content for people who sweat for a living."
+    },
+    {
+      "id": "creator_003",
+      "name": "Aisha Patel",
+      "handle": "@aisha.skin",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Aisha&backgroundColor=f6e3f4",
+      "initials": "AP",
+      "followers": 7840,
+      "engagement_rate": 0.062,
+      "categories": ["skincare", "beauty"],
+      "audience": {
+        "primary_age_range": "18-24",
+        "age_breakdown": { "18-24": 0.58, "25-34": 0.29, "35-44": 0.09, "45+": 0.04 },
+        "top_gender": "female",
+        "top_locations": ["United States", "United Kingdom"]
+      },
+      "primary_age_range": "18-24",
+      "brand_attributed_revenue": 180,
+      "shopmy_sales": 520,
+      "previous_gifts": [],
+      "shipping_address": "42 Cedar Lane, Brooklyn, NY 11201",
+      "content_style": "Micro-creator: honest empties, ingredient deep dives, no filters",
+      "tagline": "Tiny audience, loud results",
+      "bio": "Micro-creator with a hyper-engaged community. Known for brutal honesty about what actually works."
+    },
+    {
+      "id": "creator_004",
+      "name": "Tyler Brooks",
+      "handle": "@tylerbrooks",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Tyler&backgroundColor=e8f3e8",
+      "initials": "TB",
+      "followers": 8210,
+      "engagement_rate": 0.014,
+      "categories": ["lifestyle", "vlog"],
+      "audience": {
+        "primary_age_range": "18-24",
+        "age_breakdown": { "18-24": 0.61, "25-34": 0.25, "35-44": 0.10, "45+": 0.04 },
+        "top_gender": "male",
+        "top_locations": ["United States"]
+      },
+      "primary_age_range": "18-24",
+      "brand_attributed_revenue": 0,
+      "shopmy_sales": 0,
+      "previous_gifts": [],
+      "shipping_address": "17 Sunset Boulevard, Los Angeles, CA 90028",
+      "content_style": "Daily vlogs and unboxing hauls",
+      "tagline": "Living my best life, one vlog at a time",
+      "bio": "Daily vlogger. Broad lifestyle content with frequent brand unboxings."
+    },
+    {
+      "id": "creator_005",
+      "name": "Sofia Ramirez",
+      "handle": "@sofiaglow",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Sofia&backgroundColor=fde8e8",
+      "initials": "SR",
+      "followers": 214000,
+      "engagement_rate": 0.055,
+      "categories": ["beauty", "skincare"],
+      "audience": {
+        "primary_age_range": "25-34",
+        "age_breakdown": { "18-24": 0.24, "25-34": 0.46, "35-44": 0.22, "45+": 0.08 },
+        "top_gender": "female",
+        "top_locations": ["United States", "Mexico", "Spain"]
+      },
+      "primary_age_range": "25-34",
+      "brand_attributed_revenue": 41200,
+      "shopmy_sales": 96400,
+      "previous_gifts": [
+        { "product": "Barrier Repair Serum", "sku": "GT-SERUM-001", "date": "2025-06-02", "status": "delivered" },
+        { "product": "Hydrating Cleanser", "sku": "GT-CLEANSER-002", "date": "2025-08-19", "status": "delivered" }
+      ],
+      "shipping_address": "902 Palm Drive, Miami, FL 33139",
+      "content_style": "Long-form YouTube reviews plus a weekly TikTok series",
+      "tagline": "The glow-up friend you wish you had",
+      "bio": "Beauty creator and former retail buyer. Long-form reviews, routine series and shelfie styling."
+    }
+  ]
+}
