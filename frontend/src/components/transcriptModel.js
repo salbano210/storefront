@@ -25,6 +25,7 @@ export const STEP_ICONS = {
   profile_lookup: '🪪',
   criteria_evaluated: '📊',
   address_validated: '📮',
+  model_calls: '🤖',
   tool_call_completed: '🔧',
   tool_call_failed: '🔧',
   guardrail_blocked: '🛡',
@@ -216,6 +217,29 @@ export function stepSentence(event) {
       meta: (payload.patterns || []).join(', '),
     }
   }
+  if (event.type === 'model_calls') {
+    const calls = payload.calls || []
+    const models = [...new Set(calls.map((call) => call.model).filter(Boolean))]
+    const tokens = calls.reduce(
+      (sum, call) => sum + (call.tokens_in || 0) + (call.tokens_out || 0),
+      0
+    )
+    const cost = calls.reduce((sum, call) => sum + (call.cost_usd || 0), 0)
+    const retried = calls.filter((call) => (call.payload || {}).retries).length
+    const fellBack = calls.filter((call) => (call.payload || {}).used_fallback).length
+    return {
+      text: `${calls.length} model call${calls.length === 1 ? '' : 's'} to ${models.join(', ')}`,
+      meta: [
+        `${tokens.toLocaleString()} tokens`,
+        formatters.cost(cost),
+        retried ? `${retried} retried` : '',
+        fellBack ? `${fellBack} fell back` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    }
+  }
+
   if (event.type === 'tool_call_completed' || event.type === 'tool_call_failed') {
     return toolSentence(payload.tool, payload.arguments || {}, result, event)
   }
@@ -269,6 +293,7 @@ function emptyTurn(event, key) {
     reply: '',
     outcome: null,
     steps: [],
+    models: [],
     all: [],
     startedAt: event.created_at,
   }
@@ -302,6 +327,11 @@ export function groupTurns(events) {
     }
     // The started event duplicates the completed event's arguments.
     if (event.type === 'tool_call_started') continue
+    // Model calls are summarised once per turn rather than listed per call.
+    if (event.type === 'llm_response') {
+      current.models.push(event)
+      continue
+    }
 
     if (event.agent && !TRACE_AGENTS.has(event.agent) && !current.agent) {
       current.agent = event.agent
@@ -315,13 +345,24 @@ export function groupTurns(events) {
       (sum, event) => sum + (event.tokens_in || 0) + (event.tokens_out || 0),
       0
     )
-    const modelCalls = turn.all.filter((event) => event.type === 'llm_response').length
+    const modelCalls = turn.models.length
     const first = turn.all[0]
     const last = turn.all[turn.all.length - 1]
     const durationMs =
       first && last
         ? new Date(last.created_at).getTime() - new Date(first.created_at).getTime()
         : 0
+
+    const steps = dedupe(turn.steps)
+    if (turn.models.length) {
+      steps.push({
+        id: `${turn.key}-models`,
+        type: 'model_calls',
+        status: 'ok',
+        summary: '',
+        payload: { calls: turn.models },
+      })
+    }
 
     return {
       ...turn,
@@ -330,7 +371,7 @@ export function groupTurns(events) {
       modelCalls,
       durationMs,
       agent: turn.agent || 'agent',
-      steps: dedupe(turn.steps),
+      steps,
     }
   })
 }

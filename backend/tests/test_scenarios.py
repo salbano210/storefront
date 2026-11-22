@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.db import AsyncSessionLocal
 from app.models import GiftOrder, TagApplied
+from app.services import config_manager, data_store
 from conftest import ADMIN_HEADERS
 
 pytestmark = pytest.mark.asyncio
@@ -446,22 +447,66 @@ async def test_decline_requires_an_actual_request():
             ],
         )
 
+    config = config_manager.load_default_config()
+    async with AsyncSessionLocal() as db:
+        creator = await data_store.get_creator(db, "creator_004")
+    assert creator is not None
+    kwargs = {"creator": creator, "config": config}
+
     # Asked for it, and does not qualify -> a genuine decline.
-    assert _declined_offer(run(query="Barrier Repair Serum", matches=[ineligible])) is not None
+    assert (
+        _declined_offer(run(query="Barrier Repair Serum", matches=[ineligible]), **kwargs)
+        is not None
+    )
 
     # Browsed the catalogue -> no request, no decline.
-    assert _declined_offer(run(query="", matches=[ineligible])) is None
+    assert _declined_offer(run(query="", matches=[ineligible]), **kwargs) is None
 
     # Matched nothing -> nothing to decline.
-    assert _declined_offer(run(query="a leather jacket", matches=[])) is None
+    assert _declined_offer(run(query="a leather jacket", matches=[]), **kwargs) is None
 
     # Checked a gift the creator never mentioned -> not a decline.
     assert (
         _declined_offer(
-            run(query="a gentle cleanser", matches=[], selected="barrier-repair-serum")
+            run(query="a gentle cleanser", matches=[], selected="barrier-repair-serum"),
+            **kwargs,
         )
         is None
     )
+
+
+async def test_the_requested_gift_survives_a_follow_up_turn():
+    """A later turn that skips the eligibility tool still knows what was asked for.
+
+    Without this, confirming the delivery address is reported as a plain answer
+    instead of "eligible, waiting on the address".
+    """
+    from app.agents.tool_agent import AgentRun, ToolCallRecord
+    from app.orchestrator import _requested_offer
+
+    config = config_manager.load_default_config()
+    async with AsyncSessionLocal() as db:
+        creator = await data_store.get_creator(db, "creator_001")
+    assert creator is not None
+
+    run = AgentRun(
+        text="",
+        tool_calls=[
+            ToolCallRecord(
+                "find_available_gifts",
+                {"query": "Barrier Repair Serum"},
+                {
+                    "ok": True,
+                    "query": "Barrier Repair Serum",
+                    "gifts": [{"gift_id": "barrier-repair-serum", "name": "Barrier Repair Serum"}],
+                },
+            )
+        ],
+    )
+    requested = _requested_offer(run, creator=creator, config=config)
+    assert requested is not None
+    assert requested["gift_id"] == "barrier-repair-serum"
+    assert requested["eligible"] is True
 
 
 # ---------------------------------------------------------------------------

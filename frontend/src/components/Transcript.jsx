@@ -47,6 +47,35 @@ function BucketBody({ event }) {
 
   return (
     <div className="bucket-body">
+      {payload.calls && (
+        <ul className="step-list">
+          {payload.calls.map((call) => {
+            const detail = call.payload || {}
+            const chosen = (detail.tool_calls || []).map((tool) => tool.name)
+            const asked = chosen.length
+              ? `chose ${chosen.join(', ')}`
+              : (detail.tools_available || []).length
+                ? 'answered without a tool'
+                : detail.parsed
+                  ? 'structured output'
+                  : 'reply'
+            return (
+              <li key={call.id}>
+                <span className="step-list-name">{call.model}</span>
+                <span className="muted small">
+                  {asked}
+                  {detail.used_fallback ? ' · fallback' : ''}
+                  {detail.retries ? ` · ${detail.retries} retried` : ''}
+                </span>
+                <span className="mono">
+                  {call.latency_ms} ms · {(call.tokens_in || 0) + (call.tokens_out || 0)} tok
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
       {event.type === 'address_validated' && (
         <Facts
           rows={[

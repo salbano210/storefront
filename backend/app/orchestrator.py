@@ -118,46 +118,54 @@ def _eligibility_result(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     return None
 
 
-def _requested_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+def _requested_offer(
+    run: tool_agent.AgentRun, *, creator: CreatorProfile, config: BrandConfig
+) -> dict[str, Any] | None:
     """The gift the creator asked about, if the trace tells us which one.
 
     Requires that there *was* a request: a catalogue browse, or a gift the model
     checked on its own initiative, is not something the creator asked for.
-    """
-    result = _eligibility_result(run)
-    if result is None:
-        return None
 
-    offers = result.get("offers") or []
+    The evaluation is computed here when the model did not call
+    ``check_gifting_eligibility`` on this turn -- otherwise a follow-up turn (an
+    address confirmation, say) would lose track of what was being discussed and be
+    reported as a plain answer.
+    """
     found = run.any_ok("find_available_gifts") or {}
     query = (found.get("query") or "").strip()
-    matched = {gift["gift_id"] for gift in (found.get("gifts") or [])}
+    matches = found.get("gifts") or []
+    if not query or not matches:
+        return None
 
-    def was_requested(gift_id: str) -> bool:
-        return bool(query) and gift_id in matched
+    result = _eligibility_result(run) or {}
+    offers = result.get("offers") or []
+    requested_ids = {gift["gift_id"] for gift in matches}
+
+    def lookup(gift_id: str) -> dict[str, Any] | None:
+        offer = next((item for item in offers if item["gift_id"] == gift_id), None)
+        if offer is not None:
+            return offer
+        configured = config.gifting.resolve(gift_id)
+        return evaluation.evaluate_offer(creator, configured) if configured else None
 
     selected = result.get("selected")
     if selected and selected != "all":
-        match = next((offer for offer in offers if offer["gift_id"] == selected), None)
-        return match if match is not None and was_requested(match["gift_id"]) else None
+        if selected not in requested_ids:
+            return None
+        return lookup(selected)
 
-    for candidate in found.get("gifts") or []:
-        offer = next(
-            (item for item in offers if item["gift_id"] == candidate["gift_id"]), None
-        )
-        if offer is not None and was_requested(offer["gift_id"]):
+    for candidate in matches:
+        offer = lookup(candidate["gift_id"])
+        if offer is not None:
             return offer
     return None
 
 
-def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
-    """The gift the creator asked about that they do *not* qualify for.
-
-    A creator can be ineligible for the gift they asked about while still
-    qualifying for a cheaper one, so "did they qualify for anything" is the wrong
-    question. This finds the specific gift under discussion.
-    """
-    requested = _requested_offer(run)
+def _declined_offer(
+    run: tool_agent.AgentRun, *, creator: CreatorProfile, config: BrandConfig
+) -> dict[str, Any] | None:
+    """The gift the creator asked about that they do *not* qualify for."""
+    requested = _requested_offer(run, creator=creator, config=config)
     if requested is None or requested["eligible"]:
         return None
     return requested
@@ -201,7 +209,7 @@ def _extract_outcome(
                 "duplicate": bool(tag.get("duplicate")),
             }
         else:
-            requested = _requested_offer(run)
+            requested = _requested_offer(run, creator=creator, config=config)
             if requested is not None and not requested["eligible"]:
                 # Alternatives are a fact about the creator and the config, not
                 # about which tools the model happened to call.
