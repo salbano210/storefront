@@ -33,6 +33,27 @@ TERMINAL_OUTCOMES = {
     "pitch_rejected",
 }
 
+# Agents that own a task. When one of these has not finished, the conversation is
+# still theirs -- so the creator's next message resumes it rather than being
+# re-routed from scratch.
+TASK_AGENTS = {"gift_request_agent", "creator_pitch_agent"}
+
+
+def _awaiting_answer(outcome: dict[str, Any], target_agent: str) -> bool:
+    """Is this agent still waiting on the creator?
+
+    Deliberately not "did the reply end in a question mark": that made the
+    follow-up depend on a character the model may or may not emit, and a missed
+    question mark silently broke the whole resume path. The state is decided from
+    the outcome instead.
+    """
+    if target_agent not in TASK_AGENTS:
+        return False
+    if outcome["type"] not in TERMINAL_OUTCOMES:
+        return True
+    # A decline that named an alternative is an invitation to choose.
+    return bool(outcome.get("alternatives"))
+
 
 @dataclass
 class TurnResult:
@@ -404,9 +425,7 @@ async def handle_turn(
         db, conversation_id=conversation.id, role="agent", content=run.text, agent=target_agent
     )
 
-    pending = None
-    if outcome["type"] not in TERMINAL_OUTCOMES and "?" in run.text:
-        pending = target_agent
+    pending = target_agent if _awaiting_answer(outcome, target_agent) else None
 
     await logger.log(
         events.MESSAGE_SENT,

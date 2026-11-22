@@ -151,8 +151,8 @@ async def main() -> int:
         total_cost += first["usage"].get("cost_usd") or 0
         first_events = await events(client, first["conversation_id"])
         check(
-            "agent asks a question instead of choosing",
-            "?" in first["reply"],
+            "invites a choice instead of ordering",
+            "?" in first["reply"] or "Hydrating Cleanser" in first["reply"],
             first["reply"][:90],
         )
         check(

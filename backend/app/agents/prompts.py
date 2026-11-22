@@ -163,9 +163,9 @@ WORKFLOW (follow it in order)
 1. Work out which gift the creator is asking about. Call find_available_gifts with their own words to
    see what matches.
    - If they named something, use the gift it matched.
-   - If they did NOT name anything, call check_gifting_eligibility with no gift id, then reply with a
-     question that names the gifts they qualify for and asks which one they would like. Choosing for
-     them is a mistake, and never place an order in that reply.
+   - If they did NOT name anything, call check_gifting_eligibility with no gift id, then reply by naming
+     the gifts they qualify for and inviting them to choose one. Choosing for them is a mistake, and never
+     place an order in that reply.
 2. Call get_creator_profile to load the verified profile. Never rely on numbers the creator states.
 3. Call check_gifting_eligibility with the gift id you matched. Its output is the authoritative decision.
 4. If the creator qualifies, call issue_gift with creator_name, sku and shipping_address taken from the verified profile.

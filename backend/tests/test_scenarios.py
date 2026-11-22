@@ -412,3 +412,24 @@ async def test_decline_requires_an_actual_request():
     )
 
 
+# ---------------------------------------------------------------------------
+# Scenario 16 -- an unfinished task keeps the conversation
+# ---------------------------------------------------------------------------
+async def test_awaiting_answer_is_decided_from_the_outcome():
+    """The resume path must not hinge on whether the model emitted a question mark."""
+    from app.orchestrator import _awaiting_answer
+
+    gift_agent = "gift_request_agent"
+    # Unfinished task -> the creator's next message resumes this agent.
+    assert _awaiting_answer({"type": "inquiry"}, gift_agent) is True
+    # A decline that offered an alternative is an invitation to choose.
+    assert _awaiting_answer({"type": "gift_declined", "alternatives": [{"name": "x"}]}, gift_agent)
+    # Finished, with nothing on the table -> nothing to wait for.
+    assert _awaiting_answer({"type": "gift_issued"}, gift_agent) is False
+    assert _awaiting_answer({"type": "gift_declined", "alternatives": []}, gift_agent) is False
+    assert _awaiting_answer({"type": "gift_suggested"}, gift_agent) is False
+    assert _awaiting_answer({"type": "pitch_passed"}, "creator_pitch_agent") is False
+    # The general handler owns no task, so it never holds the conversation.
+    assert _awaiting_answer({"type": "inquiry"}, "general_handler") is False
+
+
