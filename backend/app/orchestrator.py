@@ -118,14 +118,11 @@ def _eligibility_result(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     return None
 
 
-def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
-    """The gift the creator asked about that they do *not* qualify for.
+def _requested_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+    """The gift the creator asked about, if the trace tells us which one.
 
-    A creator can be ineligible for the gift they asked about while still
-    qualifying for a cheaper one, so "did they qualify for anything" is the wrong
-    question. This finds the specific gift under discussion -- and requires that
-    there *was* a request. A catalogue browse, or a gift the model checked on its
-    own initiative, is not something to decline.
+    Requires that there *was* a request: a catalogue browse, or a gift the model
+    checked on its own initiative, is not something the creator asked for.
     """
     result = _eligibility_result(run)
     if result is None:
@@ -142,17 +139,28 @@ def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     selected = result.get("selected")
     if selected and selected != "all":
         match = next((offer for offer in offers if offer["gift_id"] == selected), None)
-        if match is None or match["eligible"] or not was_requested(match["gift_id"]):
-            return None
-        return match
+        return match if match is not None and was_requested(match["gift_id"]) else None
 
     for candidate in found.get("gifts") or []:
         offer = next(
             (item for item in offers if item["gift_id"] == candidate["gift_id"]), None
         )
-        if offer is not None and not offer["eligible"] and was_requested(offer["gift_id"]):
+        if offer is not None and was_requested(offer["gift_id"]):
             return offer
     return None
+
+
+def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+    """The gift the creator asked about that they do *not* qualify for.
+
+    A creator can be ineligible for the gift they asked about while still
+    qualifying for a cheaper one, so "did they qualify for anything" is the wrong
+    question. This finds the specific gift under discussion.
+    """
+    requested = _requested_offer(run)
+    if requested is None or requested["eligible"]:
+        return None
+    return requested
 
 
 def _extract_outcome(
@@ -193,21 +201,31 @@ def _extract_outcome(
                 "duplicate": bool(tag.get("duplicate")),
             }
         else:
-            declined = _declined_offer(run)
-            if declined is not None:
+            requested = _requested_offer(run)
+            if requested is not None and not requested["eligible"]:
                 # Alternatives are a fact about the creator and the config, not
                 # about which tools the model happened to call.
                 sweep = evaluation.evaluate_gifting(creator, config)
                 outcome = {
                     "type": "gift_declined",
-                    "gift": declined["name"],
-                    "gift_id": declined["gift_id"],
-                    "failed_criteria": declined["failed_labels"],
-                    "shortfalls": declined["shortfalls"],
+                    "gift": requested["name"],
+                    "gift_id": requested["gift_id"],
+                    "failed_criteria": requested["failed_labels"],
+                    "shortfalls": requested["shortfalls"],
                     "alternatives": [
                         {"name": item["name"], "url": item["url"]}
                         for item in sweep["eligible_offers"]
                     ],
+                }
+            elif requested is not None:
+                # They qualify for the gift they asked about, but nothing was
+                # ordered: the turn is still collecting what the order needs, which
+                # is usually the delivery address.
+                outcome = {
+                    "type": "details_required",
+                    "gift": requested["name"],
+                    "gift_id": requested["gift_id"],
+                    "address_on_file": (creator.shipping_address or "").strip() or None,
                 }
             else:
                 suggested = _suggested_gift(run)

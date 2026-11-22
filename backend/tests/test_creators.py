@@ -69,7 +69,19 @@ async def test_editing_metrics_changes_an_agent_decision(client, use_fake_llm):
     assert "followers" in updated.json()["changed_fields"]
     assert "brand_attributed_revenue" in updated.json()["changed_fields"]
 
-    after = await client.post("/api/chat", json={"creator_id": "creator_003", **SERUM_REQUEST})
+    opening = await client.post("/api/chat", json={"creator_id": "creator_003", **SERUM_REQUEST})
+    opening_payload = opening.json()
+    # Eligible now -- the address still has to be settled before the order.
+    assert opening_payload["outcome"]["type"] == "details_required", opening.text
+
+    after = await client.post(
+        "/api/chat",
+        json={
+            "creator_id": "creator_003",
+            "message": "Yes, that address is right.",
+            "conversation_id": opening_payload["conversation_id"],
+        },
+    )
     assert after.json()["outcome"]["type"] == "gift_issued", after.text
 
     events = (await client.get("/api/logs", params={"event_type": "creator_updated"})).json()

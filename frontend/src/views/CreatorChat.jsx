@@ -16,6 +16,7 @@ const OUTCOME_LABELS = {
   gift_duplicate: { tone: 'amber', text: 'Duplicate suppressed' },
   gift_declined: { tone: 'red', text: 'Not eligible' },
   gift_suggested: { tone: 'slate', text: 'Gift suggested' },
+  details_required: { tone: 'amber', text: 'Details needed' },
   pitch_passed: { tone: 'sage', text: 'Pitch passed' },
   pitch_rejected: { tone: 'red', text: 'Pitch rejected' },
   inquiry: { tone: 'slate', text: 'Answered' },
@@ -28,6 +29,7 @@ function outcomeFor(payload) {
   let detail = ''
   if (outcome.type === 'gift_issued') detail = `Order ${outcome.order_id}`
   if (outcome.type === 'gift_suggested') detail = outcome.product || ''
+  if (outcome.type === 'details_required') detail = outcome.gift || 'delivery address'
   if (outcome.type === 'pitch_passed' || outcome.type === 'pitch_rejected') {
     detail = `${outcome.tag} · ${outcome.score}/100`
   }

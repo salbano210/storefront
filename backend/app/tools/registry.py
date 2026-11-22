@@ -14,10 +14,11 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import addresses
 from .. import evaluation
 from ..models import Conversation, GiftOrder, Session as SessionRow, TagApplied
 from ..schemas import BrandConfig, CreatorProfile
@@ -73,6 +74,12 @@ class IssueGiftArgs(BaseModel):
     creator_name: str
     sku: str
     shipping_address: str
+
+
+class ValidateAddressArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    address: str = Field(min_length=1, max_length=300)
 
 
 class PlaceTagArgs(BaseModel):
@@ -148,21 +155,41 @@ TOOL_SCHEMAS: dict[str, dict] = {
             }
         },
     ),
+    "validate_shipping_address": _fn(
+        "validate_shipping_address",
+        (
+            "Check a delivery address before a gift is ordered. Pass the address exactly as the "
+            "creator gave it. Returns whether it is valid, the normalised form to ship to, and -- "
+            "when it is not valid -- the reason and a suggested correction to put to the creator. "
+            "Call this after the creator gives or confirms an address and before issue_gift. "
+            "issue_gift re-checks the same rules and refuses an address that does not pass."
+        ),
+        properties={
+            "address": {
+                "type": "string",
+                "description": "The delivery address exactly as the creator gave it.",
+            }
+        },
+        required=["address"],
+    ),
     "issue_gift": _fn(
         "issue_gift",
         (
             "Place the gift order in the brand's order system. Provide exactly three fields: "
-            "creator_name, sku and shipping_address, all taken from the verified profile. The tool "
-            "re-checks that gift's own criteria, the SKU and duplicates server-side, and will refuse "
-            "if anything is unmet. Only tell the creator a gift is on its way after this tool "
-            "returns success."
+            "creator_name, sku, and the delivery shipping_address the creator gave or confirmed. The "
+            "tool re-checks the gift's own criteria, the SKU, duplicates and the address server-side, "
+            "and will refuse if anything is unmet. Only tell the creator a gift is on its way after "
+            "this tool returns success."
         ),
         properties={
             "creator_name": {"type": "string", "description": "Verified creator name"},
             "sku": {"type": "string", "description": "SKU from the eligible gifting catalog"},
             "shipping_address": {
                 "type": "string",
-                "description": "Shipping address exactly as it appears on the verified profile",
+                "description": (
+                    "The delivery address the creator gave or confirmed. Call "
+                    "validate_shipping_address on it first."
+                ),
             },
         },
         required=["creator_name", "sku", "shipping_address"],
@@ -195,6 +222,7 @@ AGENT_TOOLS: dict[str, list[str]] = {
         "get_creator_profile",
         "find_available_gifts",
         "check_gifting_eligibility",
+        "validate_shipping_address",
         "issue_gift",
     ],
     "creator_pitch_agent": ["get_creator_profile", "check_pitch_fit", "place_tag"],
@@ -356,6 +384,47 @@ def _normalise(value: str) -> str:
     return " ".join((value or "").strip().lower().split())
 
 
+def _address_on_file(ctx: ToolContext) -> str | None:
+    value = (ctx.creator.shipping_address or "").strip()
+    return value or None
+
+
+async def _validate_shipping_address(args: dict, ctx: ToolContext) -> dict:
+    """Check the delivery address, and offer a correction when it fails.
+
+    The agent uses this to talk the address through with the creator; issue_gift
+    re-runs the same check, so a model that skips this step still cannot ship to an
+    address that does not validate.
+    """
+    address = (args.get("address") or "").strip()
+    on_file = _address_on_file(ctx)
+    check = addresses.validate(address, on_file=on_file)
+
+    await ctx.logger.log(
+        events.ADDRESS_VALIDATED,
+        agent=ctx.agent,
+        status="ok" if check["valid"] else "blocked",
+        summary=(
+            f"Address accepted: {check['normalised']}"
+            if check["valid"]
+            else f"Address rejected: {check['reason']}"
+        ),
+        payload={
+            "policy": "address",
+            "input": check["input"],
+            "valid": check["valid"],
+            "reason": check["reason"],
+            "missing": check["missing"],
+            "normalised": check["normalised"],
+            "suggestion": check["suggestion"],
+            "suggestion_source": check["suggestion_source"],
+            "address_on_file": on_file,
+            "source": check["source"],
+        },
+    )
+    return _ok(**check)
+
+
 async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
     profile = ctx.creator
     sku = (args.get("sku") or "").strip().upper()
@@ -422,6 +491,7 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             )
         return _fail("eligibility_not_met", message)
 
+    # Identity is never negotiable: the gift goes to the verified creator.
     adjustments: list[dict] = []
     if _normalise(args.get("creator_name", "")) != _normalise(profile.name):
         adjustments.append(
@@ -431,21 +501,49 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
                 "used": profile.name,
             }
         )
-    if _normalise(args.get("shipping_address", "")) != _normalise(profile.shipping_address):
-        adjustments.append(
-            {
-                "field": "shipping_address",
-                "attempted": args.get("shipping_address"),
-                "used": profile.shipping_address,
-            }
-        )
     if adjustments:
         await ctx.logger.log(
             events.GUARDRAIL_ADJUSTED,
             agent=ctx.agent,
-            summary="Rewrote gift details to match the verified profile",
+            summary="Rewrote the creator name to match the verified profile",
             payload={"guardrail": "verified_values_enforced", "adjustments": adjustments},
         )
+
+    # The delivery address is collected from the creator rather than taken from the
+    # profile, so it has to pass validation -- re-checked here, which means a model
+    # that skips validate_shipping_address still cannot ship to a bad address.
+    on_file = _address_on_file(ctx)
+    address_check = addresses.validate(args.get("shipping_address", ""), on_file=on_file)
+    if not address_check["valid"]:
+        await ctx.logger.log(
+            events.GUARDRAIL_BLOCKED,
+            agent=ctx.agent,
+            status="blocked",
+            summary=f"Refused issue_gift: address rejected ({address_check['reason']})",
+            payload={
+                "guardrail": "address_invalid",
+                "input": address_check["input"],
+                "reason": address_check["reason"],
+                "missing": address_check["missing"],
+                "suggestion": address_check["suggestion"],
+                "address_on_file": on_file,
+            },
+        )
+        message = (
+            f"That delivery address did not validate: {address_check['reason']}. "
+            "Do not place the order."
+        )
+        if address_check["suggestion"]:
+            message += (
+                f" Confirm this address with the creator first: "
+                f"{address_check['suggestion']}."
+            )
+        message += (
+            " Call validate_shipping_address with the confirmed address, then issue_gift again."
+        )
+        return _fail("address_invalid", message)
+
+    delivery_address = address_check["normalised"]
 
     existing = await ctx.db.scalar(
         select(GiftOrder).where(
@@ -514,7 +612,7 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             sku=offer.sku,
             product_name=offer.name,
             order_id=order_id,
-            shipping_address=profile.shipping_address,
+            shipping_address=delivery_address,
         )
     )
     await ctx.db.commit()
@@ -528,7 +626,12 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             "product": offer.name,
             "creator_id": profile.id,
             "creator_name": profile.name,
-            "shipping_address": profile.shipping_address,
+            "shipping_address": delivery_address,
+            "address_on_file": on_file,
+            "address_changed": bool(
+                on_file and delivery_address.strip().lower() != on_file.strip().lower()
+            ),
+            "address_validated": True,
             "mock_api": "mock order placement API",
         },
     )
@@ -537,7 +640,7 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
         order_id=order_id,
         sku=offer.sku,
         product=offer.name,
-        shipping_address=profile.shipping_address,
+        shipping_address=delivery_address,
         message=f"Gift order {order_id} placed successfully.",
     )
 
@@ -678,6 +781,7 @@ ARG_MODELS: dict[str, type[BaseModel]] = {
     "get_creator_profile": NoArgs,
     "find_available_gifts": FindGiftsArgs,
     "check_gifting_eligibility": CheckEligibilityArgs,
+    "validate_shipping_address": ValidateAddressArgs,
     "check_pitch_fit": NoArgs,
     "issue_gift": IssueGiftArgs,
     "place_tag": PlaceTagArgs,
@@ -687,6 +791,7 @@ EXECUTORS: dict[str, Any] = {
     "get_creator_profile": _get_creator_profile,
     "find_available_gifts": _find_available_gifts,
     "check_gifting_eligibility": _check_gifting_eligibility,
+    "validate_shipping_address": _validate_shipping_address,
     "check_pitch_fit": _check_pitch_fit,
     "issue_gift": _issue_gift,
     "place_tag": _place_tag,

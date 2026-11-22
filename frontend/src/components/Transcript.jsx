@@ -16,6 +16,7 @@ const ICONS = {
   agent_resumed: '↩',
   profile_lookup: '🪪',
   criteria_evaluated: '📊',
+  address_validated: '📮',
   tool_call_completed: '🔧',
   tool_call_failed: '🔧',
   llm_response: '🤖',
@@ -42,6 +43,10 @@ function bucketTitle(event) {
       return `${payload.agent} resumed`
     case 'profile_lookup':
       return 'verified profile lookup'
+    case 'address_validated':
+      return payload.valid
+        ? `address validated · ${payload.normalised}`
+        : `address rejected · ${payload.reason}`
     case 'criteria_evaluated':
       if (payload.policy === 'pitch') {
         return `pitch score ${payload.score}/100 → ${payload.label} (${payload.decision})`
@@ -157,6 +162,24 @@ function Bucket({ event }) {
           {payload.response_instructions && (
             <p className="bucket-note">
               <strong>Follow-up for this tag:</strong> {payload.response_instructions}
+            </p>
+          )}
+
+          {event.type === 'address_validated' && (
+            <p className="bucket-note">
+              <strong>Given:</strong> {payload.input || '—'}
+              {payload.normalised && (
+                <>
+                  {' · '}
+                  <strong>Shipping to:</strong> {payload.normalised}
+                </>
+              )}
+              {payload.suggestion && (
+                <>
+                  {' · '}
+                  <strong>Suggested correction:</strong> {payload.suggestion}
+                </>
+              )}
             </p>
           )}
 

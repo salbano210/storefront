@@ -24,6 +24,7 @@ AGENT_HANDOFF = "agent_handoff"
 AGENT_RESUMED = "agent_resumed"
 PROFILE_LOOKUP = "profile_lookup"
 CRITERIA_EVALUATED = "criteria_evaluated"
+ADDRESS_VALIDATED = "address_validated"
 TOOL_CALL_STARTED = "tool_call_started"
 TOOL_CALL_COMPLETED = "tool_call_completed"
 TOOL_CALL_FAILED = "tool_call_failed"
@@ -51,6 +52,7 @@ ALL_EVENT_TYPES = (
     AGENT_RESUMED,
     PROFILE_LOOKUP,
     CRITERIA_EVALUATED,
+    ADDRESS_VALIDATED,
     TOOL_CALL_STARTED,
     TOOL_CALL_COMPLETED,
     TOOL_CALL_FAILED,

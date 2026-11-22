@@ -80,9 +80,29 @@ async def main() -> int:
         health = (await client.get("/api/health")).json()
         print(f"\nhealth: {health['status']} | config v{health['config_version']}\n")
 
+        async def resolve_gift(creator_id: str, message: str, address: str | None = None) -> dict:
+            """Ask for a gift, then settle the delivery address.
+
+            Eligibility is no longer enough to place an order: the address has to be
+            collected and validated first, so most gift scenarios take two turns.
+            """
+            nonlocal total_cost
+            result = await chat(client, creator_id, message)
+            total_cost += result["usage"].get("cost_usd") or 0
+            if result["outcome"]["type"] == "details_required":
+                result = await chat(
+                    client,
+                    creator_id,
+                    address or "Yes, that address is right.",
+                    conversation_id=result["conversation_id"],
+                )
+                total_cost += result["usage"].get("cost_usd") or 0
+            return result
+
         print("1. Successful gifting request (creator_001, qualifying verified profile)")
-        result = await chat(client, "creator_001", "Hi! I'd love to try the Barrier Repair Serum.")
-        total_cost += result["usage"].get("cost_usd") or 0
+        result = await resolve_gift(
+            "creator_001", "Hi! I'd love to try the Barrier Repair Serum."
+        )
         evts = await events(client, result["conversation_id"])
         check("routed as gift_request", result["intent"] == "gift_request", result["intent"])
         check("gift issued", result["outcome"]["type"] == "gift_issued", str(result["outcome"]))
@@ -90,6 +110,11 @@ async def main() -> int:
         check("handoff logged", "agent_handoff" in types(evts))
         check("profile lookup logged", "profile_lookup" in types(evts))
         check("criteria evaluated", "criteria_evaluated" in types(evts))
+        check("address validated", "address_validated" in types(evts))
+        check(
+            "address checked before the order",
+            types(evts).index("address_validated") < types(evts).index("gift_issued"),
+        )
         check("gift_issued event", "gift_issued" in types(evts))
         print(f"  reply: {result['reply'][:220]}\n")
 
@@ -170,11 +195,23 @@ async def main() -> int:
         total_cost += second["usage"].get("cost_usd") or 0
         check("conversation continued", second["conversation_id"] == first["conversation_id"])
         check(
-            "resolved on the second turn",
-            second["outcome"]["type"] == "gift_issued",
+            "eligible, so the address is requested next",
+            second["outcome"]["type"] == "details_required",
             second["outcome"]["type"],
         )
-        print(f"  reply: {second['reply'][:220]}\n")
+        third = await chat(
+            client,
+            "creator_002",
+            "Yes, that address is right.",
+            conversation_id=first["conversation_id"],
+        )
+        total_cost += third["usage"].get("cost_usd") or 0
+        check(
+            "resolved once the address is settled",
+            third["outcome"]["type"] == "gift_issued",
+            third["outcome"]["type"],
+        )
+        print(f"  reply: {third['reply'][:220]}\n")
 
         print("6. Configuration change alters behaviour (relax the serum's own criteria)")
         current = (await client.get("/api/config", headers=ADMIN)).json()
@@ -193,8 +230,7 @@ async def main() -> int:
         )
         check("config saved", updated.status_code == 200, str(updated.status_code))
         new_version = updated.json()["version"]
-        result = await chat(client, "creator_003", "Could I get the Barrier Repair Serum?")
-        total_cost += result["usage"].get("cost_usd") or 0
+        result = await resolve_gift("creator_003", "Could I get the Barrier Repair Serum?")
         evts = await events(client, result["conversation_id"])
         check(
             "previously rejected creator now approved",
@@ -209,8 +245,7 @@ async def main() -> int:
         await client.post("/api/config/reset", headers=ADMIN)
 
         print("7. Verified data beats creator claims (same request, different profiles)")
-        strong = await chat(client, "creator_005", "Could I get the Discovery Set?")
-        total_cost += strong["usage"].get("cost_usd") or 0
+        strong = await resolve_gift("creator_005", "Could I get the Discovery Set?")
         weak = await chat(client, "creator_004", "Could I get the Discovery Set?")
         total_cost += weak["usage"].get("cost_usd") or 0
         check(
@@ -251,6 +286,50 @@ async def main() -> int:
         check("no alternatives", not (result["outcome"].get("alternatives") or []))
         check("reply does not claim a gift", "on its way" not in result["reply"].lower())
         print(f"  reply: {result['reply'][:220]}\n")
+
+        print("10. An address that does not validate is corrected, not ignored")
+        opening = await chat(client, "creator_001", "Could I get the Hydrating Cleanser?")
+        total_cost += opening["usage"].get("cost_usd") or 0
+        check(
+            "address requested before ordering",
+            opening["outcome"]["type"] == "details_required",
+            opening["outcome"]["type"],
+        )
+        bad = await chat(
+            client,
+            "creator_001",
+            "Sure -- 123 Example Street, Boston, MA 02111",
+            conversation_id=opening["conversation_id"],
+        )
+        total_cost += bad["usage"].get("cost_usd") or 0
+        bad_events = await events(client, opening["conversation_id"])
+        rejected = [
+            event
+            for event in bad_events
+            if event["type"] == "address_validated" and not event["payload"]["valid"]
+        ]
+        check("address rejected", bool(rejected), str(bad["outcome"]))
+        check(
+            "a correction is offered",
+            bool(rejected)
+            and rejected[-1]["payload"]["suggestion"] == "123 Example Street, Boston, MA 02110",
+        )
+        check("no order yet", bad["outcome"]["type"] != "gift_issued", bad["outcome"]["type"])
+        print(f"  reply: {bad['reply'][:220]}\n")
+
+        good = await chat(
+            client,
+            "creator_001",
+            "Yes, 123 Example Street, Boston, MA 02110 please.",
+            conversation_id=opening["conversation_id"],
+        )
+        total_cost += good["usage"].get("cost_usd") or 0
+        check(
+            "issued once the address validates",
+            good["outcome"]["type"] == "gift_issued",
+            good["outcome"]["type"],
+        )
+        print(f"  reply: {good['reply'][:220]}\n")
 
     passed = sum(1 for _, ok, _ in RESULTS if ok)
     print(f"\n{passed}/{len(RESULTS)} checks passed · total model spend ${total_cost:.5f}")

@@ -19,6 +19,24 @@ async def send(client, creator_id: str, message: str, conversation_id: str | Non
     return await client.post("/api/chat", json=body)
 
 
+# The flow collects and validates a delivery address before anything is ordered, so
+# "ask for a gift" is no longer one turn. This is what a creator confirming the
+# address we already hold looks like.
+CONFIRM_ADDRESS = "Yes, that address is right."
+
+
+async def request_gift(client, creator_id: str, message: str) -> dict:
+    """Ask for a gift and settle the address, returning the final turn's payload."""
+    opening = (await send(client, creator_id, message)).json()
+    if opening["outcome"]["type"] != "details_required":
+        return opening
+    return (
+        await send(
+            client, creator_id, CONFIRM_ADDRESS, conversation_id=opening["conversation_id"]
+        )
+    ).json()
+
+
 async def events_for(client, conversation_id: str) -> list[dict]:
     response = await client.get(
         "/api/logs", params={"conversation_id": conversation_id, "limit": 500}
@@ -43,24 +61,42 @@ async def tag_count(tag: str) -> int:
 # Scenario 1 -- successful gifting request
 # ---------------------------------------------------------------------------
 async def test_scenario_1_successful_gifting(client, use_fake_llm):
+    """Eligibility, then the delivery address, then the order -- in that order."""
     use_fake_llm()
-    response = await send(client, "creator_001", "Hi! I'd love to try the Barrier Repair Serum.")
-    assert response.status_code == 200, response.text
-    payload = response.json()
+    before = await gift_order_count()
 
-    assert payload["intent"] == "gift_request"
-    assert payload["agent"] == "gift_request_agent"
+    first = await send(client, "creator_001", "Hi! I'd love to try the Barrier Repair Serum.")
+    assert first.status_code == 200, first.text
+    opening = first.json()
+
+    assert opening["intent"] == "gift_request"
+    assert opening["agent"] == "gift_request_agent"
+    # They qualify, but nothing is ordered until the address is settled.
+    assert opening["outcome"]["type"] == "details_required"
+    assert opening["outcome"]["gift"] == "Barrier Repair Serum"
+    assert opening["outcome"]["address_on_file"] == "123 Example Street, Boston, MA 02110"
+    assert await gift_order_count() == before, "no order before the address is confirmed"
+
+    second = await send(
+        client,
+        "creator_001",
+        CONFIRM_ADDRESS,
+        conversation_id=opening["conversation_id"],
+    )
+    payload = second.json()
     assert payload["outcome"]["type"] == "gift_issued"
     assert payload["outcome"]["order_id"].startswith("GT-")
     assert "on its way" in payload["reply"]
 
-    types = [event["type"] for event in await events_for(client, payload["conversation_id"])]
+    events = await events_for(client, payload["conversation_id"])
+    types = [event["type"] for event in events]
     for expected in (
         "message_received",
         "intent_classified",
         "agent_handoff",
         "profile_lookup",
         "criteria_evaluated",
+        "address_validated",
         "tool_call_started",
         "tool_call_completed",
         "gift_issued",
@@ -68,9 +104,15 @@ async def test_scenario_1_successful_gifting(client, use_fake_llm):
     ):
         assert expected in types, f"missing {expected} in {types}"
 
+    # The order of the steps is the point of the flow.
     assert types.index("intent_classified") < types.index("agent_handoff")
-    assert types.index("criteria_evaluated") < types.index("gift_issued")
-    assert await gift_order_count() >= 1
+    assert types.index("criteria_evaluated") < types.index("address_validated")
+    assert types.index("address_validated") < types.index("gift_issued")
+    assert await gift_order_count() == before + 1
+
+    address = [event for event in events if event["type"] == "address_validated"][0]
+    assert address["payload"]["valid"] is True
+    assert address["payload"]["normalised"] == "123 Example Street, Boston, MA 02110"
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +203,7 @@ async def test_scenario_4_manipulation_is_blocked(client, use_fake_llm):
 # Scenario 5 -- multi-turn conversation with a clarifying question
 # ---------------------------------------------------------------------------
 async def test_scenario_5_multiturn_clarification(client, use_fake_llm):
+    """Three turns: which gift, then which one they want, then the address."""
     use_fake_llm()
     first = await send(client, "creator_001", "Hey, can I get a free gift?")
     assert first.status_code == 200
@@ -177,11 +220,21 @@ async def test_scenario_5_multiturn_clarification(client, use_fake_llm):
     assert second.status_code == 200
     second_payload = second.json()
     assert second_payload["conversation_id"] == first_payload["conversation_id"]
-    assert second_payload["outcome"]["type"] == "gift_issued"
+    # Eligible -- now the address has to be settled before anything is ordered.
+    assert second_payload["outcome"]["type"] == "details_required"
+
+    third = await send(
+        client,
+        "creator_001",
+        CONFIRM_ADDRESS,
+        conversation_id=first_payload["conversation_id"],
+    )
+    assert third.json()["outcome"]["type"] == "gift_issued"
 
     events = await events_for(client, first_payload["conversation_id"])
-    assert any(event["type"] == "agent_resumed" for event in events)
-    assert len([event for event in events if event["type"] == "message_received"]) == 2
+    # The conversation stayed with the gifting agent across both follow-ups.
+    assert len([event for event in events if event["type"] == "agent_resumed"]) == 2
+    assert len([event for event in events if event["type"] == "message_received"]) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -212,8 +265,7 @@ async def test_scenario_6_config_change_changes_outcome(client, use_fake_llm):
     new_version = updated.json()["version"]
     assert new_version == current["version"] + 1
 
-    second = await send(client, "creator_003", "Could I get the Barrier Repair Serum?")
-    payload = second.json()
+    payload = await request_gift(client, "creator_003", "Could I get the Barrier Repair Serum?")
     assert payload["outcome"]["type"] == "gift_issued"
 
     events = await events_for(client, payload["conversation_id"])
@@ -232,7 +284,7 @@ async def test_scenario_6_config_change_changes_outcome(client, use_fake_llm):
 async def test_scenario_7_profiles_produce_different_outcomes(client, use_fake_llm):
     use_fake_llm()
     message = "Hi! Could I please get the Hydrating Cleanser?"
-    strong = (await send(client, "creator_002", message)).json()
+    strong = await request_gift(client, "creator_002", message)
     weak = (await send(client, "creator_004", message)).json()
 
     assert strong["outcome"]["type"] == "gift_issued"

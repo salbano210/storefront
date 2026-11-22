@@ -53,6 +53,82 @@ def _last(results: list[tuple[str, dict]], name: str) -> dict | None:
     return None
 
 
+# The tool loop nudges a model that answers without consulting its required tools,
+# by injecting a user message. A fake that mistook that for the creator's own words
+# would re-run its whole plan against the nudge text, so skip those.
+NUDGE_MARKERS = (
+    "You answered without calling the tools you were given.",
+    "You still have not called every required tool.",
+)
+
+
+def _is_nudge(message: dict[str, Any]) -> bool:
+    if message.get("role") != "user":
+        return False
+    content = message.get("content") or ""
+    return any(content.startswith(marker) for marker in NUDGE_MARKERS)
+
+
+def _creator_messages(messages: list[dict[str, Any]]) -> list[str]:
+    return [
+        message["content"]
+        for message in messages
+        if message.get("role") == "user"
+        and not _is_nudge(message)
+        and isinstance(message.get("content"), str)
+    ]
+
+
+def _last_creator_message(messages: list[dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user" and not _is_nudge(message):
+            return message["content"]
+    return ""
+
+
+def _turn_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Only the messages from the current turn (after the last creator message).
+
+    The fake needs to tell "already checked eligibility earlier in this
+    conversation" from "already checked it in this turn", or it would skip the
+    address step on the follow-up.
+    """
+    last_user = max(
+        (
+            index
+            for index, message in enumerate(messages)
+            if message.get("role") == "user" and not _is_nudge(message)
+        ),
+        default=-1,
+    )
+    return messages[last_user + 1 :]
+
+
+_ADDRESS_WITH_ZIP = re.compile(r"\d{1,6}\s+.*?\d{5}(?:-\d{4})?", re.DOTALL)
+_ADDRESS_WITH_NUMBER = re.compile(r"\d{1,6}\s+\S.*", re.DOTALL)
+
+
+def _address_in(message: str) -> str | None:
+    """Pull an address out of the creator's message, if they gave one."""
+    match = _ADDRESS_WITH_ZIP.search(message or "")
+    if match:
+        return match.group(0).strip().rstrip(".")
+    match = _ADDRESS_WITH_NUMBER.search(message or "")
+    if match:
+        return match.group(0).strip().rstrip(".")
+    return None
+
+
+def _already_asked_for_address(messages: list[dict[str, Any]], on_file: str) -> bool:
+    """Did the agent already put the address on file to the creator?"""
+    if not on_file:
+        return False
+    return any(
+        message.get("role") == "assistant" and on_file in (message.get("content") or "")
+        for message in messages
+    )
+
+
 def _match_gift(message: str, gifts: list[dict]) -> dict | None:
     lowered = message.lower()
     for gift in gifts:
@@ -199,25 +275,31 @@ class FakeLLM:
 
     # -- gifting agent -----------------------------------------------------
     def _gift(self, messages: list[dict[str, Any]]) -> LLMResult:
-        results = _tool_results(messages)
-        user = _last_user(messages)
+        # What happened earlier in the conversation vs. in this turn.
+        history = _tool_results(messages)
+        turn = _tool_results(_turn_messages(messages))
+        user = _last_creator_message(messages)
+        # Previous turns' tool results are not carried in the message history, only
+        # the conversation text, so search on everything the creator has said.
+        search_text = " ".join(_creator_messages(messages))
 
-        if not results:
+        found = _find(turn, "find_available_gifts") or {}
+        gifts = found.get("gifts") or []
+        profile = (_find(history, "get_creator_profile") or {}).get("creator") or {}
+        on_file = (profile.get("shipping_address") or "").strip()
+
+        if not turn:
             return self._tools(
                 [
                     ("get_creator_profile", {}),
                     (
                         "find_available_gifts",
-                        {"query": "" if self.browse_without_query else user},
+                        {"query": "" if self.browse_without_query else search_text},
                     ),
                 ]
             )
 
-        profile = (_find(results, "get_creator_profile") or {}).get("creator") or {}
-        found = _find(results, "find_available_gifts") or {}
-        gifts = found.get("gifts") or []
-
-        gift = _match_gift(user, gifts)
+        gift = _match_gift(search_text, gifts)
         if gift is None:
             if len(gifts) == 1:
                 gift = gifts[0]
@@ -227,7 +309,7 @@ class FakeLLM:
                     f"Happy to help! Which gift were you hoping for -- {options}?"
                 )
 
-        issued = _last(results, "issue_gift")
+        issued = _find(turn, "issue_gift")
         if issued is not None:
             if issued.get("ok"):
                 return self._result(
@@ -238,39 +320,72 @@ class FakeLLM:
                 "I'm sorry, but I can't approve that gift. " + str(issued.get("message", ""))
             )
 
-        # Step 1 -- check the gift the creator actually asked about.
-        targeted = _last(results, "check_gifting_eligibility")
+        # Step 1 -- the authoritative eligibility decision for the gift asked about.
+        # The *last* one in the turn, because the sweep follows the targeted check.
+        targeted = _last(turn, "check_gifting_eligibility")
         if targeted is None:
             return self._tools(
                 [("check_gifting_eligibility", {"gift_id": gift["gift_id"]})]
             )
 
-        if targeted.get("selected") == gift["gift_id"]:
-            if targeted.get("eligible"):
-                return self._tools([("issue_gift", self._gift_args(profile, gift))])
+        if targeted.get("selected") != gift["gift_id"]:
+            # That was the full sweep, so answer with the shortfall and any alternative.
+            shortfalls = "; ".join(gift.get("shortfalls") or [])
+            reply = (
+                f"Thanks for asking. {gift['name']} isn't available to you right now -- against "
+                f"your verified profile, {shortfalls}."
+            )
+            alternatives = targeted.get("eligible_offers") or []
+            if alternatives:
+                best = alternatives[0]
+                reply += f" You do qualify for the {best['name']} though: {best['url']}"
+            return self._result(reply)
+
+        if not targeted.get("eligible"):
             if self.force_issue_gift_when_ineligible:
-                return self._tools([("issue_gift", self._gift_args(profile, gift))])
+                return self._tools([("issue_gift", self._gift_args(profile, gift, on_file))])
             # Step 2 -- sweep every offer so a decline can name an alternative.
             return self._tools([("check_gifting_eligibility", {})])
 
-        # Step 3 -- answer with the shortfall, and the alternative when there is one.
-        shortfalls = "; ".join(gift.get("shortfalls") or [])
-        reply = (
-            f"Thanks for asking. {gift['name']} isn't available to you right now -- against "
-            f"your verified profile, {shortfalls}."
+        # Eligible. Now collect the delivery address, then validate it, then order.
+        address = _address_in(user)
+        if address is None and _already_asked_for_address(messages, on_file):
+            address = on_file  # the creator confirmed the address on file
+
+        validation = _find(turn, "validate_shipping_address")
+        if validation is None:
+            # Offer the address we already hold before asking for a new one, and
+            # quote it so a plain "yes" is recognisable as the confirmation.
+            if _address_in(user) is None and on_file and not _already_asked_for_address(
+                messages, on_file
+            ):
+                return self._result(
+                    f"Great news -- you qualify for the {gift['name']}. Shall I send it to the "
+                    f"address we have on file: {on_file}?"
+                )
+            if not address:
+                return self._result(
+                    f"Great news -- you qualify for the {gift['name']}. "
+                    "What's the best address to send it to?"
+                )
+            return self._tools([("validate_shipping_address", {"address": address})])
+
+        if not validation.get("valid"):
+            reply = f"I couldn't validate that address: {validation.get('reason')}."
+            if validation.get("suggestion"):
+                reply += f" Did you mean {validation['suggestion']}?"
+            return self._result(reply)
+
+        return self._tools(
+            [("issue_gift", self._gift_args(profile, gift, validation["normalised"]))]
         )
-        alternatives = targeted.get("eligible_offers") or []
-        if alternatives:
-            best = alternatives[0]
-            reply += f" You do qualify for the {best['name']} though: {best['url']}"
-        return self._result(reply)
 
     @staticmethod
-    def _gift_args(profile: dict, gift: dict) -> dict[str, Any]:
+    def _gift_args(profile: dict, gift: dict, address: str) -> dict[str, Any]:
         return {
             "creator_name": profile.get("name", ""),
             "sku": gift["sku"],
-            "shipping_address": profile.get("shipping_address", ""),
+            "shipping_address": address,
         }
 
 

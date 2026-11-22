@@ -17,8 +17,20 @@ FAKE_KEY = "sk-or-v1-SUPERSECRETKEYVALUEFORTESTS0001"
 
 
 async def _chat(client, message: str = "I'd love the Barrier Repair Serum"):
-    return await client.post(
+    """Ask for a gift and settle the delivery address, so the turn completes."""
+    opening = await client.post(
         "/api/chat", json={"creator_id": "creator_001", "message": message}
+    )
+    payload = opening.json()
+    if payload.get("outcome", {}).get("type") != "details_required":
+        return opening
+    return await client.post(
+        "/api/chat",
+        json={
+            "creator_id": "creator_001",
+            "message": "Yes, that address is right.",
+            "conversation_id": payload["conversation_id"],
+        },
     )
 
 
@@ -79,7 +91,13 @@ async def test_transcript_and_export(client, use_fake_llm):
 
     transcript = (await client.get(f"/api/conversations/{conversation_id}")).json()
     assert transcript["conversation"]["creator_name"] == "Kathryn Bigelow"
-    assert [message["role"] for message in transcript["messages"]] == ["creator", "agent"]
+    # Two turns: the gift request and the address confirmation.
+    assert [message["role"] for message in transcript["messages"]] == [
+        "creator",
+        "agent",
+        "creator",
+        "agent",
+    ]
     assert transcript["events"], "the transcript must carry the execution events"
 
     export = await client.get(f"/api/conversations/{conversation_id}/export")
@@ -106,7 +124,8 @@ async def test_log_filters_and_meta(client, use_fake_llm):
 
     conversations = (await client.get("/api/conversations")).json()
     assert len(conversations["conversations"]) == 1
-    assert conversations["conversations"][0]["message_count"] == 2
+    # Two turns: the gift request, then the address confirmation.
+    assert conversations["conversations"][0]["message_count"] == 4
 
 
 async def test_events_carry_the_config_version(client, use_fake_llm):

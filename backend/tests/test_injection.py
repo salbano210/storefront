@@ -142,9 +142,18 @@ async def test_fabricated_tag_is_replaced(client, use_fake_llm):
 async def test_legitimate_approvals_are_not_rewritten(client, use_fake_llm):
     """Grounding must not interfere with a genuine, tool-backed approval."""
     use_fake_llm()
-    response = await client.post(
+    opening = await client.post(
         "/api/chat",
         json={"creator_id": "creator_001", "message": "Can I get the Barrier Repair Serum?"},
+    )
+    # The address step comes first now, so complete it.
+    response = await client.post(
+        "/api/chat",
+        json={
+            "creator_id": "creator_001",
+            "message": "Yes, that address is right.",
+            "conversation_id": opening.json()["conversation_id"],
+        },
     )
     payload = response.json()
     assert payload["outcome"]["type"] == "gift_issued"
