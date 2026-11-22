@@ -41,8 +41,12 @@ async def main() -> None:
 
     fake = None
     if os.environ.get("REAL_LLM") != "1":
-        fake = FakeLLM(force_wrong_tag=True)
+        fake = FakeLLM(
+            force_wrong_tag=True,
+            obey_injection=os.environ.get("OBEY_INJECTION") == "1",
+        )
         llm_client.build_llm = lambda *args, **kwargs: fake
+        print(f"[debug] fake model: obey_injection={fake.obey_injection} force_wrong_tag={fake.force_wrong_tag}")
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://debug") as client:

@@ -18,10 +18,11 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from .. import settings
+from .. import guardrails
 from . import event_logger as events
 from .event_logger import EventLogger
 
-MAX_SYSTEM_PREVIEW = 2000
+MAX_SYSTEM_PREVIEW = 160
 MAX_TEXT_PREVIEW = 4000
 
 
@@ -254,6 +255,12 @@ class LLMClient:
         )
 
         if self.logger is not None:
+            # Never persist a leaked system prompt: a creator can read their own
+            # session's logs, so echoing internal instructions back would hand
+            # them the configuration via the audit trail.
+            logged_text = text[:MAX_TEXT_PREVIEW]
+            if guardrails.find_prompt_leak(text):
+                logged_text = "[withheld: the model echoed its internal instructions]"
             await self.logger.log(
                 events.LLM_RESPONSE,
                 agent=agent,
@@ -263,14 +270,15 @@ class LLMClient:
                     "requested_model": result.requested_model,
                     "used_fallback": result.used_fallback,
                     "temperature": temperature,
-                    "system_prompt": system[:MAX_SYSTEM_PREVIEW],
+                    "system_prompt_chars": len(system),
+                    "system_prompt_preview": system[:MAX_SYSTEM_PREVIEW],
                     "messages": messages,
                     "tools_available": [t["function"]["name"] for t in (tools or [])],
                     "tool_calls": [
                         {"name": call.name, "arguments": self._safe_json(call.arguments)}
                         for call in tool_calls
                     ],
-                    "text": text[:MAX_TEXT_PREVIEW],
+                    "text": logged_text,
                     "parsed": result.parsed,
                 },
                 model=result.model,

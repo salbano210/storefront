@@ -27,7 +27,7 @@ async def run_general(
     result = await llm.complete(
         model=config.models.general_inquiry,
         system=system,
-        messages=[*history, {"role": "user", "content": user_message}],
+        messages=[*history, prompts.creator_turn(user_message)],
         agent=AGENT_NAME,
         temperature=0.3,
         max_tokens=500,

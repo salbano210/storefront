@@ -47,7 +47,7 @@ async def test_issue_gift_refuses_ineligible_creator(tool_context, gift_order_co
 
 
 async def test_issue_gift_happy_path(tool_context, gift_order_count):
-    async with tool_context("creator_001") as (ctx, db):
+    async with tool_context("creator_001", conversation_id="conv_happy") as (ctx, db):
         result = await execute_tool(
             "issue_gift",
             {
@@ -72,13 +72,50 @@ async def test_issue_gift_happy_path(tool_context, gift_order_count):
     assert await gift_order_count(session_id) == 1
 
 
+async def test_one_gift_per_conversation(tool_context):
+    """A vague request must not turn into the model shipping the whole catalog."""
+    async with tool_context("creator_005", conversation_id="conv_one_gift") as (ctx, db):
+        first = await execute_tool(
+            "issue_gift",
+            {
+                "creator_name": "Sofia Coppola",
+                "sku": "GT-SERUM-001",
+                "shipping_address": "902 Palm Drive, Miami, FL 33139",
+            },
+            ctx,
+        )
+        assert first["ok"] is True, first
+
+        second = await execute_tool(
+            "issue_gift",
+            {
+                "creator_name": "Sofia Coppola",
+                "sku": "GT-CLEANSER-002",
+                "shipping_address": "902 Palm Drive, Miami, FL 33139",
+            },
+            ctx,
+        )
+        assert second["ok"] is False
+        assert second["error"] == "gift_already_issued"
+        assert first["order_id"] in second["message"]
+
+        rows = await _events(ctx.conversation_id, db)
+        blocked = [
+            row
+            for row in rows
+            if row.type == "guardrail_blocked"
+            and "one_gift_per_conversation" in (row.payload_json or "")
+        ]
+        assert blocked, "the one-gift rule must be visible in the audit log"
+
+
 async def test_issue_gift_is_idempotent(tool_context, gift_order_count):
     args = {
         "creator_name": "Kathryn Bigelow",
         "sku": "GT-SERUM-001",
         "shipping_address": "123 Example Street, Boston, MA 02110",
     }
-    async with tool_context("creator_001") as (ctx, db):
+    async with tool_context("creator_001", conversation_id="conv_idempotent") as (ctx, db):
         first = await execute_tool("issue_gift", args, ctx)
         second = await execute_tool("issue_gift", args, ctx)
         assert first["ok"] and second["ok"]
@@ -134,7 +171,7 @@ async def test_issue_gift_rejects_unknown_sku(tool_context):
 
 
 async def test_issue_gift_uses_verified_identity(tool_context):
-    async with tool_context("creator_001") as (ctx, db):
+    async with tool_context("creator_001", conversation_id="conv_identity") as (ctx, db):
         result = await execute_tool(
             "issue_gift",
             {

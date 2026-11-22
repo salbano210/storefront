@@ -9,6 +9,7 @@ from typing import Any
 from ..schemas import BrandConfig, CreatorProfile
 from ..services.llm_client import LLMClient
 from ..tools.registry import ToolContext, execute_tool, tool_definitions
+from . import prompts
 
 MAX_ITERATIONS = 5
 FALLBACK_REPLY = (
@@ -73,7 +74,10 @@ async def run_tool_agent(
 ) -> AgentRun:
     """Run an LLM + tools loop until the model replies without calling a tool."""
     tools = tool_definitions(agent_name)
-    messages: list[dict[str, Any]] = [*history, {"role": "user", "content": user_message}]
+    messages: list[dict[str, Any]] = [
+        *history,
+        prompts.creator_turn(user_message),
+    ]
     records: list[ToolCallRecord] = []
     last_model = model
     force_tools = False

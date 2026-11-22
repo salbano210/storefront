@@ -391,6 +391,34 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             message="A gift for this SKU was already issued for this creator; no new order was placed.",
         )
 
+    # One gift per conversation. Without this, a vague request ("can I get a free
+    # gift?") can turn into a model shipping every SKU in the catalog.
+    already_issued = await ctx.db.scalar(
+        select(GiftOrder).where(GiftOrder.conversation_id == ctx.conversation_id)
+    )
+    if already_issued is not None:
+        await ctx.logger.log(
+            events.GUARDRAIL_BLOCKED,
+            agent=ctx.agent,
+            status="blocked",
+            summary=(
+                f"Refused issue_gift: {already_issued.product_name} "
+                f"({already_issued.order_id}) was already issued in this conversation"
+            ),
+            payload={
+                "guardrail": "one_gift_per_conversation",
+                "existing_order_id": already_issued.order_id,
+                "existing_sku": already_issued.sku,
+                "requested_sku": product.sku,
+            },
+        )
+        return _fail(
+            "gift_already_issued",
+            f"A gift was already issued in this conversation ({already_issued.product_name}, order "
+            f"{already_issued.order_id}). Do not place another order — confirm the existing one to "
+            "the creator.",
+        )
+
     await asyncio.sleep(MOCK_API_LATENCY_SECONDS)
     order_id = f"GT-{random.randint(10000, 99999)}"
     ctx.db.add(

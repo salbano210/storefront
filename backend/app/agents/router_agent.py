@@ -108,7 +108,10 @@ async def route(
     result = await llm.complete(
         model=config.models.router,
         system=system,
-        messages=[*history, {"role": "user", "content": user_message}],
+        messages=[
+            *history,
+            prompts.creator_turn(user_message),
+        ],
         agent="router_agent",
         schema=prompts.ROUTER_SCHEMA,
         schema_name="IntentClassification",

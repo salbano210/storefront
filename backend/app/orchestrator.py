@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import evaluation, guardrails
 from .agents import general_handler, prompts, router_agent, tool_agent
 from .models import Conversation, Event, Session as SessionRow
 from .schemas import BrandConfig, CreatorProfile
@@ -21,6 +22,7 @@ from .services import event_logger as events
 from .services.event_logger import EventLogger
 from .services.llm_client import LLMClient
 from .tools.registry import ToolContext
+from . import guardrails
 
 TERMINAL_OUTCOMES = {"gift_issued", "gift_duplicate", "gift_declined", "tag_applied"}
 
@@ -143,6 +145,26 @@ async def handle_turn(
         db, conversation_id=conversation.id, role="creator", content=user_message
     )
 
+    # Flag instruction-override attempts for the audit log. This never blocks a
+    # message -- it just makes the attempt visible, and the deterministic
+    # checks below are what actually hold the line.
+    suspects = guardrails.detect_injection(user_message)
+    if suspects:
+        await logger.log(
+            events.INJECTION_SUSPECTED,
+            agent="guard",
+            status="warn",
+            summary="Instruction-override language detected: " + ", ".join(suspects),
+            payload={
+                "patterns": suspects,
+                "message": user_message,
+                "action": (
+                    "Treated as untrusted content. Agent rules, tools and eligibility criteria are "
+                    "unchanged."
+                ),
+            },
+        )
+
     history = await store.recent_turns(db, conversation.id, limit=12)
     if history and history[-1]["role"] == "user" and history[-1]["content"] == user_message:
         history = history[:-1]
@@ -241,6 +263,41 @@ async def handle_turn(
         run = tool_agent.AgentRun(text=text, model=config.models.general_inquiry)
 
     outcome = _extract_outcome(run, target_agent)
+
+    # The model can be talked into lying about an outcome, or into handing over
+    # its instructions. Neither survives this check: the reply is replaced with
+    # one built from what the tools actually did.
+    verdict = guardrails.inspect_reply(
+        run.text,
+        records=run.tool_calls,
+        agent=target_agent,
+        eligibility=(
+            evaluation.evaluate_gifting(creator, config)
+            if target_agent == "gift_request_agent"
+            else None
+        ),
+        fit=(
+            evaluation.pitch_evaluation(creator, config)
+            if target_agent == "creator_pitch_agent"
+            else None
+        ),
+    )
+    if verdict.replaced:
+        await logger.log(
+            events.GUARDRAIL_BLOCKED,
+            agent=target_agent,
+            status="blocked",
+            summary=verdict.summary,
+            payload={
+                "guardrail": verdict.guardrail,
+                **verdict.details,
+                "replacement": verdict.replacement,
+            },
+        )
+        run = tool_agent.AgentRun(
+            text=verdict.replacement or "", tool_calls=run.tool_calls, model=run.model
+        )
+
     await store.append_message(
         db, conversation_id=conversation.id, role="agent", content=run.text, agent=target_agent
     )

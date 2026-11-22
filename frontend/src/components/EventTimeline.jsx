@@ -170,7 +170,7 @@ function Detail({ event }) {
             <p>{payload.text}</p>
           </div>
         )}
-        <JsonBlock value={payload} label="Full payload (system prompt + messages)" />
+        <JsonBlock value={payload} label="Model call payload (prompt preview + messages)" />
       </>
     )
   }
