@@ -70,9 +70,14 @@ _cache: dict[str, Any] = {"fetched_at": 0.0, "models": []}
 
 def _per_million(value: Any) -> float | None:
     try:
-        return round(float(value) * 1_000_000, 4)
+        price = float(value) * 1_000_000
     except (TypeError, ValueError):
         return None
+    # Dynamic-priced routers (e.g. openrouter/auto) report -1; they cannot be
+    # compared on price and are not sensible per-agent choices.
+    if price < 0:
+        return None
+    return round(price, 4)
 
 
 async def list_models(force: bool = False) -> list[dict[str, Any]]:
@@ -94,18 +99,22 @@ async def list_models(force: bool = False) -> list[dict[str, Any]]:
             if "tools" not in params:
                 continue
             pricing = item.get("pricing") or {}
+            prompt_price = _per_million(pricing.get("prompt"))
+            completion_price = _per_million(pricing.get("completion"))
+            if prompt_price is None or completion_price is None:
+                continue
             models.append(
                 {
                     "id": model_id,
                     "name": item.get("name") or model_id,
-                    "prompt_price_per_m": _per_million(pricing.get("prompt")),
-                    "completion_price_per_m": _per_million(pricing.get("completion")),
+                    "prompt_price_per_m": prompt_price,
+                    "completion_price_per_m": completion_price,
                     "context_length": item.get("context_length"),
                     "supports_tools": True,
                     "recommended": model_id in RECOMMENDED,
                 }
             )
-        models.sort(key=lambda m: (not m["recommended"], m["id"]))
+        models.sort(key=lambda m: (not m["recommended"], m["prompt_price_per_m"], m["id"]))
         if models:
             _cache.update(fetched_at=now, models=models)
             return models

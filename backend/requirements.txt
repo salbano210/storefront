@@ -5,4 +5,5 @@ python-dotenv
 openai>=1.51
 sqlalchemy[asyncio]>=2.0
 aiosqlite
+asyncpg
 httpx
