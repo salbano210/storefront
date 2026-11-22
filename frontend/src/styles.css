@@ -577,6 +577,75 @@ code,
   object-fit: cover;
 }
 
+/* --- creator editing ------------------------------------------------------ */
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.gate-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.gate-inline > div {
+  flex: 1 1 240px;
+}
+
+.gate-inline p {
+  margin: 2px 0 0;
+}
+
+.gate-inline input {
+  width: 190px;
+}
+
+.edit-banner {
+  padding: 14px 18px;
+  margin-bottom: 18px;
+  border: 1px solid #eddfbc;
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.creator-card.edit {
+  grid-column: span 2;
+}
+
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 12px 0 14px;
+}
+
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+@media (max-width: 860px) {
+  .creator-card.edit {
+    grid-column: span 1;
+  }
+}
+
 .how-it-works {
   margin-top: 44px;
   padding: 26px 28px;
@@ -595,73 +664,6 @@ code,
 .steps li {
   margin-bottom: 8px;
 }
-
-/* --- key panel ----------------------------------------------------------- */
-.keypanel {
-  position: relative;
-}
-
-.keypanel-pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 10px);
-  width: 340px;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--white);
-  box-shadow: 0 18px 40px rgba(20, 17, 15, 0.14);
-  z-index: 50;
-}
-
-.keypanel-pop h4 {
-  margin-bottom: 6px;
-}
-
-.keypanel-pop input {
-  width: 100%;
-}
-
-.keypanel-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.keypanel-status {
-  margin-top: 10px;
-  font-size: 12.5px;
-}
-
-.keypanel-status.ok {
-  color: var(--sage);
-}
-
-.keypanel-status.bad {
-  color: var(--red);
-}
-
-.keypanel-meta {
-  display: flex;
-  gap: 16px;
-  margin: 14px 0 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.keypanel-meta dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-
-.keypanel-meta dd {
-  margin: 0;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
 
 /* --- chat ---------------------------------------------------------------- */
 .chat-page {

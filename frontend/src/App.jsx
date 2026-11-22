@@ -5,7 +5,6 @@ import CreatorSelect from './views/CreatorSelect.jsx'
 import CreatorChat from './views/CreatorChat.jsx'
 import AdminConfig from './views/AdminConfig.jsx'
 import Logs from './views/Logs.jsx'
-import KeyPanel from './components/KeyPanel.jsx'
 
 const NAV = [
   { to: '/', label: 'Creators', end: true },
@@ -15,7 +14,7 @@ const NAV = [
 ]
 
 export default function App() {
-  const { session, hasKey, sessionError } = useSession()
+  const { session, sessionError } = useSession()
 
   return (
     <div className="app">
@@ -39,11 +38,13 @@ export default function App() {
             ))}
           </nav>
           <div className="topbar-right">
-            <KeyPanel />
             {session && (
-              <div className="usage-pill" title="Model spend in this browser session">
-                <span className={`dot ${session.key_mode === 'byok' ? 'dot-own' : 'dot-host'}`} />
-                {session.key_mode === 'byok' ? 'Your key' : 'Demo key'}
+              <div
+                className="usage-pill"
+                title="Messages used and model spend for this browser session"
+              >
+                <span className="dot dot-host" />
+                {session.message_count}/{session.message_cap} messages
                 <span className="usage-sep">·</span>
                 {formatters.cost(session.session_cost_usd)}
               </div>
@@ -68,7 +69,9 @@ export default function App() {
           Prototype. External APIs (order placement, tagging, creator profiles) are mocked, but the
           multi-agent execution, business rules and audit log are real.
         </span>
-        {!hasKey && <span className="footer-note">Running on the demo OpenRouter key.</span>}
+        {session && !session.host_key_available && (
+          <span className="footer-note">No OpenRouter key configured — chat is unavailable.</span>
+        )}
       </footer>
     </div>
   )

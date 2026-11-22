@@ -75,7 +75,7 @@ Optional extras:
 
 | Plan | Behaviour |
 |---|---|
-| **Free** (default) | SQLite lives on the container's ephemeral filesystem. It persists while the instance runs, but a redeploy or a Render-initiated restart resets it: the brand config reseeds from `backend/app/data/brand_config.default.json` and the logs start empty. For a demo this is usually fine — the audit trail just needs to last the session. |
+| **Free** (default) | SQLite lives on the container's ephemeral filesystem. It persists while the instance runs, but a redeploy or a Render-initiated restart resets it: the brand config and the creator profiles reseed from the repo fixtures and the logs start empty. For a demo this is usually fine — the audit trail just needs to last the session. |
 | **Paid + disk** | Add a persistent disk mounted at `/app/data` (Render → your service → Disks). Config edits and logs then survive redeploys. |
 | **Postgres/Neon** | Set `DATABASE_URL` (`postgresql://...`). The app switches to asyncpg automatically and the config, conversations, logs, gift orders and tags become durable. This is the same path used by my other Render projects. |
 
@@ -104,6 +104,9 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
    verified 8,210 followers.
 3. `/admin` → lower `minimum_followers` → save → back to chat as **Paul Thomas Anderson** → the gift is now
    approved, and the log shows `config v2`.
+4. `/` → **Edit verified metrics** → enter the passcode → raise **Paul Thomas Anderson**'s followers to
+   60,000 → **Save metrics** → ask for the serum again → approved, and `/logs` shows a
+   `creator_updated` event with the before/after value of the changed field.
 
 ---
 
@@ -113,8 +116,8 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
 |---|---|---|
 | First request takes ~45s | Free instance cold start | Warm it up, or upgrade for demo day |
 | `no_api_key` error in chat | No host key configured | Set `OPENROUTER_API_KEY` in Render, or paste a key in the UI |
-| `daily_budget` error | Host-key spend ceiling reached | Raise `MAX_DAILY_SPEND_USD`, or use BYOK |
-| `session_message_cap` error | 40 messages used in that browser | Click "New conversation", or use BYOK (100 messages) |
+| `daily_budget` error | Daily host-key spend ceiling reached | Raise `MAX_DAILY_SPEND_USD`, or wait for the next UTC day |
+| `session_message_cap` error | 40 messages used in that browser | Click "New conversation" — the allowance refreshes |
 | `/admin` asks for a passcode you don't know | `ADMIN_PASSCODE` set during setup | Change it in Render → Environment, then redeploy |
 | Config edits vanished | Free instance restarted | Expected on the free tier; add a disk or `DATABASE_URL` |
 | Logs page empty for a visitor | Logs are scoped to the visitor's own session | Use "All sessions" (needs the admin passcode) |

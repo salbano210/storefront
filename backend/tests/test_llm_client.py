@@ -94,7 +94,7 @@ async def test_chat_surfaces_exhausted_credits_clearly(client, monkeypatch):
     assert response.status_code == 402
     detail = response.json()["detail"]
     assert detail["code"] == "credits_exhausted"
-    assert "run out of credits" in detail["message"]
+    assert "credits are exhausted" in detail["message"]
 
     # the failure is still visible in the audit log
     events = (await client.get("/api/logs", params={"event_type": "llm_error"})).json()

@@ -58,6 +58,7 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 7 | Different profiles, different outcomes | Same request as two creators | One approved, one declined, both from the same rules |
 | 8 | Non-giftable SKU | Ask for the Limited Edition Holiday Kit | Refused; the SKU is in the catalog but flagged not giftable |
 | 9 | Cheap-model misbehaviour | (Built in) the model invents a label or skips a tool | Guardrail blocks or nudges it, and the log shows the recovery |
+| 10 | Editing verified metrics | On `/`, click **Edit verified metrics**, raise a failing creator's followers, save | The same creator is now approved, and the log shows a `creator_updated` event with the before/after values |
 
 > **A note on the creator names:** the five profiles are named after film directors so they're easy
 > to keep straight while demoing. Their metrics, categories, audiences, bios and shipping addresses
@@ -126,7 +127,7 @@ POST /api/chat
 
 | View | What it shows |
 |---|---|
-| **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — two qualify for gifting, two do not, one exaggerates. |
+| **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — three qualify for gifting, two do not, one exaggerates. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / tag applied). No agent reasoning, tools or configuration is visible here. |
 | **Agent logs** (`/logs`) | The full internal trace: intent classification, agent handoffs, verified profile lookups, criteria tables with pass/fail per rule, tool calls with arguments and results, guardrail blocks, per-call model/token/cost/latency, and the final reply. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration editor: gifting criteria, gifting catalog with SKUs, pitch criteria, classification labels and thresholds, ideal-profile targets, scoring weights, per-agent instructions and per-agent model selection. Form view plus a raw JSON editor and the live JSON schema. |
@@ -216,23 +217,57 @@ Prints the outcome, the reply and the full event trace.
 
 ---
 
-## Bring your own key (BYOK)
+## Model spend and abuse guards
 
-The demo runs on a **host OpenRouter key** by default, so anyone can open the link and start chatting
-with no setup. Visitors can optionally paste their own key:
+Every agent call runs on a single **host OpenRouter key** held in the server environment. Visitors
+need no key and no setup — they open the link and chat.
 
-- The key lives in `sessionStorage` for that tab only and is sent per request in an
-  `X-OpenRouter-Key` header.
-- The server never persists it, and a redactor strips anything matching `sk-or-*` before it can reach
-  the database or the logs (there is a test asserting this).
-- Pasting a key raises the session message cap (40 → 100) and spends the visitor's credits instead of
-  the host's.
-- `POST /api/key/test` validates the key against OpenRouter and reports the remaining balance before
-  it is used.
+The key is never returned by any endpoint and never persisted: a redactor strips anything matching
+`sk-or-*` before it can reach the database or the logs, and a test asserts the host key never appears
+in the audit trail.
 
-Guards on the host key: a per-session message cap, a daily spend ceiling (`MAX_DAILY_SPEND_USD`,
-default $2.00) and a per-IP burst limit. When the ceiling is hit, chat replies with a friendly "paste
-your own key to keep exploring" message and logs a `budget_blocked` event.
+Three guards protect it:
+
+| Guard | Default | Behaviour when tripped |
+|---|---|---|
+| Per-session message cap | `SESSION_MESSAGE_CAP=40` | `429` with *"Click New conversation to start fresh"* — starting a new conversation refreshes the allowance |
+| Daily spend ceiling | `MAX_DAILY_SPEND_USD=2.00` | `429` until the next UTC day; logged as `budget_blocked` |
+| Per-IP burst limit | `IP_RATE_LIMIT_PER_MINUTE=10` | `429` for a minute |
+
+`POST /api/key/test` is an **admin-gated** operator diagnostic: it reports the host key's credit
+limit, total and daily usage, and remaining free-model requests, straight from OpenRouter.
+
+---
+
+## Verified creator profiles
+
+Creator profiles are the authoritative data every decision is made on, so they live in the
+**database** (seeded from `backend/app/data/creators.json` on first boot) rather than in the frontend
+or in a prompt. That is what makes "the agents ignore what the creator claims" a structural property
+instead of a polite instruction.
+
+A brand admin can edit every metric from the Creators page:
+
+1. `/` → **Edit verified metrics** → enter the admin passcode.
+2. Each card becomes a form: name, handle, followers, engagement rate, brand-attributed revenue,
+   Storefront sales, audience age range, top gender, categories, shipping address, content style,
+   tagline, bio. Nested data you don't edit (audience breakdown, previous gifts, avatar) is preserved.
+3. **Save metrics** persists it, and the next message the agents handle uses the new numbers.
+
+Every edit is recorded in the audit trail as a `creator_updated` event carrying the before/after value
+of each changed field — so you can show exactly which numbers produced a decision. `POST
+/api/creators/reset` restores the repo fixtures.
+
+| Endpoint | Access | Purpose |
+|---|---|---|
+| `GET /api/creators` | public | Card data (no revenue or shipping address) |
+| `GET /api/creators?full=true` | admin | Full verified profiles, for the editor |
+| `GET /api/creators/{id}/verified` | admin | One full profile |
+| `PUT /api/creators/{id}` | admin | Update a profile (validated, audited) |
+| `POST /api/creators/reset` | admin | Restore every profile from the repo fixtures |
+
+Values are validated: engagement rate must be a 0–1 fraction, follower counts and revenue cannot be
+negative, and the `id` in the body must match the path.
 
 ---
 
@@ -287,11 +322,11 @@ exposes the JSON schema for the raw editor.
 
 | Real | Mocked |
 |---|---|
-| Multi-agent routing, handoffs and conversation memory | Creator profile API (`get_creator_profile` reads local fixtures) |
-| Every business rule, threshold and guardrail | Order placement API (`issue_gift` returns a synthetic order id) |
-| The full audit log and per-call cost accounting | Storefront tagging API (`place_tag`) |
-| Admin configuration, versioning and validation | Authentication (demo passcode only; no accounts) |
-| OpenRouter model calls, retries and fallback | Shipping (nothing physically ships) |
+| Multi-agent routing, handoffs and conversation memory | Order placement API (`issue_gift` returns a synthetic order id) |
+| Every business rule, threshold and guardrail | ShopMy-style tagging API (`place_tag`) |
+| The full audit log and per-call cost accounting | Authentication (demo passcode only; no accounts) |
+| Admin configuration and creator profiles: versioned, validated, audited | Shipping (nothing physically ships) |
+| OpenRouter model calls, retries and fallback | The upstream creator-profile API itself — `get_creator_profile` reads this app's own database, which is editable at `/` |
 
 Swapping the mocks for real integrations means replacing three functions in
 `backend/app/tools/registry.py`; nothing else changes.
@@ -314,7 +349,7 @@ backend/
   tests/           49 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, AdminConfig, Logs
-  src/components/  EventTimeline, CriteriaTable, AdminFields, KeyPanel, ui
+  src/components/  EventTimeline, CriteriaTable, AdminFields, ui
 scripts/           smoke_demo.py, debug_turn.py
 render.yaml, Dockerfile, DEPLOYMENT.md
 ```

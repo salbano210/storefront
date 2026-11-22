@@ -57,7 +57,6 @@ SESSION_TTL_DAYS = _env_int("SESSION_TTL_DAYS", 30)
 # --- Budget + abuse guards ------------------------------------------------
 MAX_DAILY_SPEND_USD = _env_float("MAX_DAILY_SPEND_USD", 2.0)
 SESSION_MESSAGE_CAP = _env_int("SESSION_MESSAGE_CAP", 40)
-BYOK_SESSION_MESSAGE_CAP = _env_int("BYOK_SESSION_MESSAGE_CAP", 100)
 IP_RATE_LIMIT_PER_MINUTE = _env_int("IP_RATE_LIMIT_PER_MINUTE", 10)
 
 # --- Storage --------------------------------------------------------------

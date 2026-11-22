@@ -51,21 +51,25 @@ async def test_all_sessions_scope_requires_passcode(client, use_fake_llm):
     assert allowed.json()["count"] > 0
 
 
-async def test_visitor_keys_never_reach_the_logs(client, use_fake_llm):
+async def test_host_key_never_reaches_the_logs(client, use_fake_llm):
+    """The only key in play is the host key, and it must never be persisted."""
+    from app import settings
+
     use_fake_llm()
     response = await client.post(
         "/api/chat",
         json={"creator_id": "creator_001", "message": "Can I get the Barrier Repair Serum?"},
-        headers={"X-OpenRouter-Key": FAKE_KEY},
     )
     assert response.status_code == 200
-    session = (await client.get("/api/session", headers={"X-OpenRouter-Key": FAKE_KEY})).json()
-    assert session["key_mode"] == "byok"
 
-    blob = json.dumps((await client.get("/api/logs", params={"limit": 500})).json())
-    assert FAKE_KEY not in blob
+    logs = (await client.get("/api/logs", params={"limit": 500})).json()
+    blob = json.dumps(logs)
+    assert settings.OPENROUTER_API_KEY not in blob
     assert "sk-or-v1-" not in blob
     assert not contains_secret(json.loads(blob))
+
+    session = (await client.get("/api/session")).json()
+    assert "key_mode" not in session
 
 
 async def test_transcript_and_export(client, use_fake_llm):

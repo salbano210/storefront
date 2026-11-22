@@ -77,7 +77,7 @@ async def logs_meta(
             {
                 "id": item.id,
                 "creator_id": item.creator_id,
-                "creator_name": _creator_name(item.creator_id),
+                "creator_name": await _creator_name(db, item.creator_id),
                 "created_at": store.iso(item.created_at),
                 "updated_at": store.iso(item.updated_at),
                 "status": item.status,
@@ -89,8 +89,8 @@ async def logs_meta(
     }
 
 
-def _creator_name(creator_id: str) -> str:
-    profile = data_store.get_creator(creator_id)
+async def _creator_name(db: AsyncSession, creator_id: str) -> str:
+    profile = await data_store.get_creator(db, creator_id)
     return profile.name if profile else creator_id
 
 
@@ -108,7 +108,7 @@ async def list_conversations(
             {
                 "id": item.id,
                 "creator_id": item.creator_id,
-                "creator_name": _creator_name(item.creator_id),
+                "creator_name": await _creator_name(db, item.creator_id),
                 "created_at": store.iso(item.created_at),
                 "updated_at": store.iso(item.updated_at),
                 "message_count": int(message_count or 0),
@@ -144,7 +144,7 @@ async def get_conversation(
         "conversation": {
             "id": conversation.id,
             "creator_id": conversation.creator_id,
-            "creator_name": _creator_name(conversation.creator_id),
+            "creator_name": await _creator_name(db, conversation.creator_id),
             "created_at": store.iso(conversation.created_at),
             "updated_at": store.iso(conversation.updated_at),
             "config_version": conversation.config_version,

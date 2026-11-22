@@ -34,20 +34,20 @@ def require_admin(request: Request) -> str:
     return "admin"
 
 
-def resolve_api_key(request: Request) -> tuple[str, bool]:
-    """Return (key, is_byok). BYOK wins; the host key is the fallback."""
-    header = (request.headers.get("X-OpenRouter-Key") or "").strip()
-    if header:
-        return header, True
+def resolve_api_key() -> str:
+    """Return the host OpenRouter key.
+
+    The demo is host-key only: there is no visitor-supplied key path.
+    """
     if settings.OPENROUTER_API_KEY:
-        return settings.OPENROUTER_API_KEY, False
+        return settings.OPENROUTER_API_KEY
     raise HTTPException(
         status_code=400,
         detail={
             "code": "no_api_key",
             "message": (
-                "This demo has no host OpenRouter key configured. "
-                "Paste your own OpenRouter key to continue."
+                "This demo has no OpenRouter key configured. "
+                "Ask the person running the demo to set OPENROUTER_API_KEY."
             ),
         },
     )

@@ -35,16 +35,23 @@ async def chat(
     except budget.LimitExceeded as exc:
         raise _http_error(429, exc.reason, exc.message) from exc
 
-    key, byok = resolve_api_key(request)
+    key = resolve_api_key()
 
-    creator = data_store.get_creator(payload.creator_id)
+    creator = await data_store.get_creator(db, payload.creator_id)
     if creator is None:
         raise _http_error(404, "unknown_creator", f"No creator profile for '{payload.creator_id}'.")
 
     session_row = await store.get_or_create_session(db, sid)
 
+    # Starting a new conversation refreshes the session's message allowance, so
+    # the cap is a speed bump rather than a dead end. The daily spend ceiling and
+    # the per-IP burst limit remain the hard stops.
+    if payload.conversation_id is None and session_row.message_count:
+        session_row.message_count = 0
+        await db.commit()
+
     try:
-        limits = await budget.check_limits(db, session_row, byok=byok)
+        limits = await budget.check_limits(db, session_row)
     except budget.LimitExceeded as exc:
         await EventLogger(db, session_id=sid).log(
             events.BUDGET_BLOCKED,
@@ -97,8 +104,8 @@ async def chat(
             402,
             "credits_exhausted",
             (
-                "The OpenRouter key in use has run out of credits, so the agents can't run. "
-                "Paste your own key in the key panel, or top up the demo key, to keep going."
+                "The demo's OpenRouter credits are exhausted, so the agents can't run. "
+                "Ask the demo owner to top up the key."
             ),
         ) from exc
     except LLMError as exc:
@@ -115,12 +122,10 @@ async def chat(
         tokens_in=turn.usage.get("tokens_in", 0),
         tokens_out=turn.usage.get("tokens_out", 0),
         cost_usd=turn.usage.get("cost_usd", 0.0),
-        key_mode="byok" if byok else None,
     )
 
     budget_snapshot = {
         **limits,
-        "key_mode": "byok" if byok else "host",
         "messages_used": session_row.message_count,
         "session_cost_usd": round(session_row.total_cost_usd, 4),
         "daily_cost_usd": round(limits["daily_cost_usd"] + turn.usage.get("cost_usd", 0.0), 6),

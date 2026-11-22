@@ -1,15 +1,15 @@
-"""Health, model catalogue and BYOK key validation."""
+"""Health, model catalogue and host-key diagnostics."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import settings
 from ..db import get_db
 from ..services import config_manager, model_catalog
-from .deps import resolve_api_key
+from .deps import require_admin
 
 router = APIRouter(prefix="/api", tags=["meta"])
 
@@ -42,11 +42,21 @@ async def models(refresh: bool = False) -> dict:
 
 
 @router.post("/key/test")
-async def test_key(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
-    key, byok = resolve_api_key(request)
+async def test_key(_: str = Depends(require_admin)) -> dict:
+    """Operator diagnostic: report the host key's credit limit and usage.
+
+    Admin-gated because it exposes the demo's spend. There is no visitor-supplied
+    key path.
+    """
+    if not settings.OPENROUTER_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "no_api_key", "message": "OPENROUTER_API_KEY is not configured."},
+        )
+
     import httpx
 
-    headers = {"Authorization": f"Bearer {key}"}
+    headers = {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"}
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(f"{settings.OPENROUTER_BASE_URL}/key", headers=headers)
@@ -92,7 +102,6 @@ async def test_key(request: Request, db: AsyncSession = Depends(get_db)) -> dict
 
     return {
         "ok": True,
-        "key_mode": "byok" if byok else "host",
         "label": data.get("label"),
         "is_free_tier": data.get("is_free_tier"),
         "limit_usd": limit,

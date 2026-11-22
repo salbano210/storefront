@@ -25,9 +25,10 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 sys.path.insert(0, str(BACKEND / "tests"))
 from fake_llm import FakeLLM  # noqa: E402
 
+from app.bootstrap import bootstrap  # noqa: E402
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import config_manager, llm_client  # noqa: E402
+from app.services import llm_client  # noqa: E402
 
 
 async def main() -> None:
@@ -36,7 +37,7 @@ async def main() -> None:
 
     await init_db()
     async with AsyncSessionLocal() as db:
-        await config_manager.ensure_seeded(db)
+        await bootstrap(db)
 
     fake = None
     if os.environ.get("REAL_LLM") != "1":

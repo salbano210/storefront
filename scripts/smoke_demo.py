@@ -29,9 +29,9 @@ os.environ.setdefault("IP_RATE_LIMIT_PER_MINUTE", "0")
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
+from app.bootstrap import bootstrap  # noqa: E402
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services import config_manager  # noqa: E402
 
 ADMIN = {"X-Admin-Passcode": "smoke-passcode"}
 RESULTS: list[tuple[str, bool, str]] = []
@@ -71,7 +71,7 @@ async def main() -> int:
 
     await init_db()
     async with AsyncSessionLocal() as db:
-        await config_manager.ensure_seeded(db)
+        await bootstrap(db)
 
     transport = ASGITransport(app=app)
     total_cost = 0.0

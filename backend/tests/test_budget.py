@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import ADMIN_HEADERS  # noqa: F401
+from conftest import ADMIN_HEADERS
 
 from app import settings
 from app.services.budget import LimitExceeded, check_rate_limit
@@ -19,51 +19,57 @@ async def test_session_message_cap(client, use_fake_llm, monkeypatch):
 
     first = await client.post("/api/chat", json=BODY)
     assert first.status_code == 200
+    conversation_id = first.json()["conversation_id"]
 
-    second = await client.post("/api/chat", json=BODY)
+    second = await client.post("/api/chat", json={**BODY, "conversation_id": conversation_id})
     assert second.status_code == 429
     assert second.json()["detail"]["code"] == "session_message_cap"
+    assert "New conversation" in second.json()["detail"]["message"]
 
     events = (await client.get("/api/logs", params={"event_type": "budget_blocked"})).json()
     assert events["count"] == 1
     assert events["events"][0]["payload"]["reason"] == "session_message_cap"
 
 
-async def test_reset_clears_the_message_counter(client, use_fake_llm, monkeypatch):
+async def test_new_conversation_refreshes_the_allowance(client, use_fake_llm, monkeypatch):
+    """The message cap must be a speed bump, not a dead end."""
     use_fake_llm()
     monkeypatch.setattr(settings, "SESSION_MESSAGE_CAP", 1)
-    assert (await client.post("/api/chat", json=BODY)).status_code == 200
-    assert (await client.post("/api/chat", json=BODY)).status_code == 429
+
+    first = await client.post("/api/chat", json=BODY)
+    conversation_id = first.json()["conversation_id"]
+    blocked = await client.post("/api/chat", json={**BODY, "conversation_id": conversation_id})
+    assert blocked.status_code == 429
+
+    fresh = await client.post("/api/chat", json=BODY)  # no conversation_id -> new conversation
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["conversation_id"] != conversation_id
+
+
+async def test_reset_endpoint_clears_the_counter(client, use_fake_llm, monkeypatch):
+    use_fake_llm()
+    monkeypatch.setattr(settings, "SESSION_MESSAGE_CAP", 1)
+
+    first = await client.post("/api/chat", json=BODY)
+    conversation_id = first.json()["conversation_id"]
+    blocked = await client.post("/api/chat", json={**BODY, "conversation_id": conversation_id})
+    assert blocked.status_code == 429
 
     reset = await client.post("/api/session/reset")
     assert reset.status_code == 200
-    assert (await client.post("/api/chat", json=BODY)).status_code == 200
+    assert (
+        await client.post("/api/chat", json={**BODY, "conversation_id": conversation_id})
+    ).status_code == 200
 
 
-async def test_daily_budget_blocks_the_host_key(client, use_fake_llm, monkeypatch):
+async def test_daily_budget_blocks_chat(client, use_fake_llm, monkeypatch):
     use_fake_llm()
     monkeypatch.setattr(settings, "MAX_DAILY_SPEND_USD", 0.0)
 
     blocked = await client.post("/api/chat", json=BODY)
     assert blocked.status_code == 429
     assert blocked.json()["detail"]["code"] == "daily_budget"
-    assert "your own OpenRouter key" in blocked.json()["detail"]["message"]
-
-    byok = await client.post(
-        "/api/chat", json=BODY, headers={"X-OpenRouter-Key": "sk-or-v1-visitorownkey000000000"}
-    )
-    assert byok.status_code == 200, byok.text
-    assert byok.json()["budget"]["key_mode"] == "byok"
-
-
-async def test_byok_has_a_higher_message_cap(client, use_fake_llm, monkeypatch):
-    use_fake_llm()
-    monkeypatch.setattr(settings, "SESSION_MESSAGE_CAP", 1)
-    monkeypatch.setattr(settings, "BYOK_SESSION_MESSAGE_CAP", 3)
-    headers = {"X-OpenRouter-Key": "sk-or-v1-visitorownkey000000000"}
-
-    assert (await client.post("/api/chat", json=BODY, headers=headers)).status_code == 200
-    assert (await client.post("/api/chat", json=BODY, headers=headers)).status_code == 200
+    assert "daily model budget" in blocked.json()["detail"]["message"]
 
 
 async def test_no_key_configured_is_a_friendly_error(client, use_fake_llm, monkeypatch):
@@ -96,7 +102,7 @@ async def test_health_endpoint(client):
     assert payload["host_key_configured"] is True
 
 
-# --- BYOK key validation (OpenRouter /key responses are mocked) -------------
+# --- host-key diagnostics (OpenRouter /key responses are mocked) ------------
 class _FakeKeyResponse:
     def __init__(self, status_code: int, payload: dict) -> None:
         self.status_code = status_code
@@ -125,7 +131,16 @@ def _patch_openrouter(monkeypatch, status_code: int, payload: dict) -> None:
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
 
 
-async def test_key_test_reports_limit_and_usage(client, monkeypatch):
+async def test_key_diagnostic_is_admin_only(client, monkeypatch):
+    assert (await client.post("/api/key/test")).status_code == 401
+
+    _patch_openrouter(monkeypatch, 200, {"data": {"limit": 3.0, "limit_remaining": 2.5, "usage": 0.5}})
+    response = await client.post("/api/key/test", headers=ADMIN_HEADERS)
+    assert response.status_code == 200
+    assert response.json()["limit_remaining_usd"] == 2.5
+
+
+async def test_key_diagnostic_reports_limit_and_usage(client, monkeypatch):
     _patch_openrouter(
         monkeypatch,
         200,
@@ -140,7 +155,7 @@ async def test_key_test_reports_limit_and_usage(client, monkeypatch):
             }
         },
     )
-    payload = (await client.post("/api/key/test")).json()
+    payload = (await client.post("/api/key/test", headers=ADMIN_HEADERS)).json()
     assert payload["ok"] is True
     assert payload["limit_remaining_usd"] == 3.25
     assert payload["usage_usd"] == 1.75
@@ -148,17 +163,17 @@ async def test_key_test_reports_limit_and_usage(client, monkeypatch):
     assert "left on this key's credit limit" in payload["message"]
 
 
-async def test_key_test_flags_exhausted_limit(client, monkeypatch):
+async def test_key_diagnostic_flags_exhausted_limit(client, monkeypatch):
     _patch_openrouter(
         monkeypatch, 200, {"data": {"limit": 5.0, "limit_remaining": 0.0, "usage": 5.0}}
     )
-    payload = (await client.post("/api/key/test")).json()
+    payload = (await client.post("/api/key/test", headers=ADMIN_HEADERS)).json()
     assert "exhausted" in payload["message"]
 
 
-async def test_key_test_rejects_a_bad_key(client, monkeypatch):
+async def test_key_diagnostic_rejects_a_bad_key(client, monkeypatch):
     _patch_openrouter(monkeypatch, 401, {})
-    response = await client.post("/api/key/test")
+    response = await client.post("/api/key/test", headers=ADMIN_HEADERS)
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "invalid_key"
 

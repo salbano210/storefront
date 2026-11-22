@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app import evaluation
+from app.db import AsyncSessionLocal
 from app.models import Event, GiftOrder, TagApplied
 from app.services import config_manager, data_store
 from app.tools.registry import execute_tool
@@ -241,8 +242,9 @@ async def test_pitch_scores_produce_expected_labels():
         "creator_004": "Poor Match",
         "creator_005": "Excellent Match",
     }
-    for creator_id, label in expected.items():
-        profile = data_store.get_creator(creator_id)
-        result = evaluation.pitch_evaluation(profile, config)
-        assert result["label"] == label, f"{creator_id} scored {result['score']}"
+    async with AsyncSessionLocal() as db:
+        for creator_id, label in expected.items():
+            profile = await data_store.get_creator(db, creator_id)
+            result = evaluation.pitch_evaluation(profile, config)
+            assert result["label"] == label, f"{creator_id} scored {result['score']}"
 

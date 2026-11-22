@@ -39,6 +39,8 @@ LLM_ERROR = "llm_error"
 BUDGET_BLOCKED = "budget_blocked"
 CONFIG_UPDATED = "config_updated"
 CONFIG_RESET = "config_reset"
+CREATOR_UPDATED = "creator_updated"
+CREATOR_RESET = "creator_reset"
 SESSION_STARTED = "session_started"
 
 ALL_EVENT_TYPES = (
@@ -63,6 +65,8 @@ ALL_EVENT_TYPES = (
     BUDGET_BLOCKED,
     CONFIG_UPDATED,
     CONFIG_RESET,
+    CREATOR_UPDATED,
+    CREATOR_RESET,
     SESSION_STARTED,
 )
 

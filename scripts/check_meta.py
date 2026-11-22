@@ -19,6 +19,8 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 
+ADMIN = {"X-Admin-Passcode": os.environ.get("ADMIN_PASSCODE", "smoke-passcode")}
+
 
 async def main() -> None:
     key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -40,17 +42,15 @@ async def main() -> None:
             )
 
         if key:
-            response = await client.post("/api/key/test", headers={"X-OpenRouter-Key": key})
-            print(f"POST /api/key/test (byok) -> {response.status_code} {json.dumps(response.json())[:300]}")
-            response = await client.post("/api/key/test")
-            print(f"POST /api/key/test (host) -> {response.status_code} {json.dumps(response.json())[:220]}")
+            response = await client.post("/api/key/test", headers=ADMIN)
+            print(f"POST /api/key/test (admin) -> {response.status_code} {json.dumps(response.json())[:300]}")
+            unlocked = await client.post("/api/key/test")
+            print(f"POST /api/key/test (no passcode) -> {unlocked.status_code}")
 
-        response = await client.post(
-            "/api/key/test", headers={"X-OpenRouter-Key": "sk-or-v1-not-a-real-key-0000000000"}
-        )
+        response = await client.post("/api/key/test")
         print(
-            f"POST /api/key/test (bad key) -> {response.status_code} "
-            f"code={response.json()['detail']['code']}"
+            f"POST /api/key/test (no passcode) -> {response.status_code} "
+            f"code={response.json().get('detail', {}).get('code')}"
         )
 
 

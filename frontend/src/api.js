@@ -1,27 +1,9 @@
-const KEY_STORAGE = 'storefront.openrouter_key'
 const ADMIN_STORAGE = 'storefront.admin_passcode'
 
 /* ---------------------------------------------------------------------------
- * BYOK: a visitor's own OpenRouter key lives in sessionStorage only. It is
- * attached to the request headers for that tab and never persisted server-side.
+ * The demo runs on the host OpenRouter key. The only thing the browser holds is
+ * the brand-admin passcode (sessionStorage, per tab), sent as a header.
  * ------------------------------------------------------------------------- */
-export function getOpenRouterKey() {
-  try {
-    return sessionStorage.getItem(KEY_STORAGE) || ''
-  } catch {
-    return ''
-  }
-}
-
-export function setOpenRouterKey(value) {
-  try {
-    if (value) sessionStorage.setItem(KEY_STORAGE, value.trim())
-    else sessionStorage.removeItem(KEY_STORAGE)
-  } catch {
-    /* storage disabled -- BYOK silently unavailable */
-  }
-}
-
 export function getAdminPasscode() {
   try {
     return sessionStorage.getItem(ADMIN_STORAGE) || ''
@@ -48,13 +30,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = 'GET', body, withKey = true, withAdmin = true } = {}) {
+export async function api(path, { method = 'GET', body, withAdmin = true } = {}) {
   const headers = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (withKey) {
-    const key = getOpenRouterKey()
-    if (key) headers['X-OpenRouter-Key'] = key
-  }
   if (withAdmin) {
     const passcode = getAdminPasscode()
     if (passcode) headers['X-Admin-Passcode'] = passcode

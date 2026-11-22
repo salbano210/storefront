@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import settings
@@ -15,21 +15,16 @@ router = APIRouter(prefix="/api", tags=["session"])
 
 @router.get("/session")
 async def get_session(
-    request: Request,
     db: AsyncSession = Depends(get_db),
     sid: str = Depends(session_id),
 ) -> dict:
     row = await store.get_or_create_session(db, sid)
-    byok = bool((request.headers.get("X-OpenRouter-Key") or "").strip())
-    if byok and row.key_mode != "byok":
-        row = await store.record_usage(db, row, messages=0, key_mode="byok")
     return {
         "session_id": row.id,
-        "key_mode": "byok" if byok else row.key_mode,
         "host_key_available": settings.HOST_KEY_AVAILABLE,
         "admin_required": bool(settings.ADMIN_PASSCODE),
         "message_count": row.message_count,
-        "message_cap": budget.message_cap(byok),
+        "message_cap": settings.SESSION_MESSAGE_CAP,
         "session_cost_usd": round(row.total_cost_usd, 4),
         "daily_cost_usd": await budget.spend_today(db),
         "daily_budget_usd": settings.MAX_DAILY_SPEND_USD,

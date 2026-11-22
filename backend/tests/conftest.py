@@ -23,11 +23,11 @@ os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-testkey000000000000000000000000"
 os.environ["ADMIN_PASSCODE"] = "test-passcode"
 os.environ["MAX_DAILY_SPEND_USD"] = "1000"
 os.environ["SESSION_MESSAGE_CAP"] = "40"
-os.environ["BYOK_SESSION_MESSAGE_CAP"] = "100"
 os.environ["IP_RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["STATIC_DIR"] = ""
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="storefront-tests-")
 
+from app.bootstrap import bootstrap  # noqa: E402
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import GiftOrder  # noqa: E402
@@ -43,7 +43,7 @@ ADMIN_HEADERS = {"X-Admin-Passcode": "test-passcode"}
 async def _database():
     await init_db()
     async with AsyncSessionLocal() as db:
-        await config_manager.ensure_seeded(db)
+        await bootstrap(db)
     yield
 
 
@@ -70,7 +70,7 @@ async def client():
 async def _tool_context(creator_id: str, agent: str = "gift_request_agent", conversation_id: str = "conv_unit"):
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.get_current(db)
-        creator = data_store.get_creator(creator_id)
+        creator = await data_store.get_creator(db, creator_id)
         assert creator is not None, f"unknown creator {creator_id}"
         session = await store.get_or_create_session(db, f"sess_unit_{creator_id}_{agent}")
         logger = EventLogger(

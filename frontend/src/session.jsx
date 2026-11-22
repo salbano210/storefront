@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, getAdminPasscode, getOpenRouterKey, setAdminPasscode, setOpenRouterKey } from './api'
+import { api, getAdminPasscode, setAdminPasscode } from './api'
 
 const SessionContext = createContext(null)
 
@@ -25,7 +25,6 @@ export function writeSelectedCreator(creatorId) {
 export function SessionProvider({ children }) {
   const [session, setSession] = useState(null)
   const [sessionError, setSessionError] = useState('')
-  const [hasKey, setHasKey] = useState(() => Boolean(getOpenRouterKey()))
   const [hasPasscode, setHasPasscode] = useState(() => Boolean(getAdminPasscode()))
 
   const refresh = useCallback(async () => {
@@ -49,18 +48,7 @@ export function SessionProvider({ children }) {
       session,
       sessionError,
       refresh,
-      hasKey,
       hasPasscode,
-      saveKey(next) {
-        setOpenRouterKey(next)
-        setHasKey(Boolean(next))
-        refresh()
-      },
-      clearKey() {
-        setOpenRouterKey('')
-        setHasKey(false)
-        refresh()
-      },
       savePasscode(next) {
         setAdminPasscode(next)
         setHasPasscode(Boolean(next))
@@ -70,7 +58,7 @@ export function SessionProvider({ children }) {
         setHasPasscode(false)
       },
     }),
-    [session, sessionError, refresh, hasKey, hasPasscode],
+    [session, sessionError, refresh, hasPasscode],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

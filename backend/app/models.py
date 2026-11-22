@@ -35,7 +35,7 @@ class Session(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    key_mode: Mapped[str] = mapped_column(String(16), default="host")  # host | byok
+    key_mode: Mapped[str] = mapped_column(String(16), default="host")  # reserved; always "host"
     message_count: Mapped[int] = mapped_column(Integer, default=0)
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
@@ -126,3 +126,19 @@ class ConfigVersion(Base):
     config_json: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CreatorProfileRow(Base):
+    """Verified creator profiles.
+
+    Seeded from ``app/data/creators.json`` on first boot; after that the database
+    is the source of truth so a brand admin can edit the metrics the agents
+    decide on.
+    """
+
+    __tablename__ = "creator_profiles"
+
+    creator_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    profile_json: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

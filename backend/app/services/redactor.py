@@ -1,8 +1,8 @@
 """Secret scrubbing.
 
 Nothing that looks like an API key is ever written to the database, the
-console, or an event payload. Visitors can supply their own OpenRouter key, so
-this is a hard requirement, not a nicety.
+console, or an event payload. The host OpenRouter key is the only key the demo
+holds, and it must never leak into the audit trail.
 """
 
 from __future__ import annotations

@@ -12,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__, settings
 from .api import chat, config, creators, logs, meta, session
+from .bootstrap import bootstrap
 from .db import AsyncSessionLocal, init_db
-from .services import config_manager
 from .services import conversation_store as store
 
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173"]
@@ -23,8 +23,7 @@ DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localho
 async def lifespan(app: FastAPI):
     await init_db()
     async with AsyncSessionLocal() as db:
-        version, _ = await config_manager.ensure_seeded(db)
-        app.state.config_version = version
+        app.state.config_version = await bootstrap(db)
     yield
 
 

@@ -201,28 +201,28 @@ class ConfigEnvelope(BaseModel):
 class CreatorCard(BaseModel):
     """Public creator fields -- safe to hand to the browser."""
 
-    id: str
-    name: str
-    handle: str
-    image: str
-    initials: str
-    followers: int
-    engagement_rate: float
-    categories: list[str]
-    primary_age_range: str
-    content_style: str
-    tagline: str
-    bio: str
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=80)
+    handle: str = Field(max_length=40)
+    image: str = Field(default="", max_length=500)
+    initials: str = Field(default="", max_length=4)
+    followers: int = Field(0, ge=0, le=1_000_000_000)
+    engagement_rate: float = Field(0.0, ge=0, le=1)
+    categories: list[str] = Field(default_factory=list)
+    primary_age_range: str = Field("", max_length=20)
+    content_style: str = Field("", max_length=300)
+    tagline: str = Field("", max_length=160)
+    bio: str = Field("", max_length=600)
 
 
 class CreatorProfile(CreatorCard):
     """Verified profile -- the authoritative data the agents decide on."""
 
-    audience: dict[str, Any]
-    brand_attributed_revenue: float
-    storefront_sales: float
-    previous_gifts: list[dict[str, Any]]
-    shipping_address: str
+    audience: dict[str, Any] = Field(default_factory=dict)
+    brand_attributed_revenue: float = Field(0.0, ge=0)
+    storefront_sales: float = Field(0.0, ge=0)
+    previous_gifts: list[dict[str, Any]] = Field(default_factory=list)
+    shipping_address: str = Field("", max_length=300)
 
 
 class ChatRequest(BaseModel):

@@ -1,8 +1,8 @@
 """Spend and message guards.
 
-A public demo link with a server-side key is an open wallet, so the host key is
-metered three ways: per session, per day, and per IP. Visitors who supply their
-own key (BYOK) bypass the cost caps -- it is their wallet.
+The demo runs entirely on the host OpenRouter key, so that key is metered two
+ways: a per-session message allowance and a hard daily spend ceiling. A per-IP
+burst limit protects against scripts.
 """
 
 from __future__ import annotations
@@ -35,35 +35,29 @@ async def spend_today(db: AsyncSession) -> float:
     return round(float(total or 0.0), 6)
 
 
-def message_cap(byok: bool) -> int:
-    return settings.BYOK_SESSION_MESSAGE_CAP if byok else settings.SESSION_MESSAGE_CAP
-
-
-async def check_limits(db: AsyncSession, session: Session, *, byok: bool) -> dict:
+async def check_limits(db: AsyncSession, session: Session) -> dict:
     """Raise ``LimitExceeded`` if the visitor has used up their allowance."""
-    cap = message_cap(byok)
+    cap = settings.SESSION_MESSAGE_CAP
     if session.message_count >= cap:
         raise LimitExceeded(
             "session_message_cap",
             (
                 f"This demo session has reached its {cap}-message limit. "
-                "Reset the conversation to start fresh, or paste your own OpenRouter key "
-                "to keep going."
+                'Click "New conversation" to start fresh.'
             ),
         )
 
     daily = await spend_today(db)
-    if not byok and daily >= settings.MAX_DAILY_SPEND_USD:
+    if daily >= settings.MAX_DAILY_SPEND_USD:
         raise LimitExceeded(
             "daily_budget",
             (
-                f"The demo has reached its daily model budget (${settings.MAX_DAILY_SPEND_USD:.2f}). "
-                "Paste your own OpenRouter key to keep exploring."
+                f"The demo has reached its daily model budget "
+                f"(${settings.MAX_DAILY_SPEND_USD:.2f}). Please try again tomorrow."
             ),
         )
 
     return {
-        "key_mode": "byok" if byok else "host",
         "messages_used": session.message_count,
         "message_cap": cap,
         "session_cost_usd": round(session.total_cost_usd, 4),
