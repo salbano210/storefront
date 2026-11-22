@@ -26,11 +26,20 @@ export default function KeyPanel() {
         throw new Error(data?.detail?.message || `Key rejected (${response.status})`)
       }
       saveKey(candidate)
-      const balance =
-        data.remaining_usd === null || data.remaining_usd === undefined
-          ? ''
-          : ` Balance: $${data.remaining_usd}`
-      setStatus({ ok: true, message: `${data.message}${balance}` })
+      const facts = []
+      if (data.limit_remaining_usd !== null && data.limit_remaining_usd !== undefined) {
+        facts.push(`$${Number(data.limit_remaining_usd).toFixed(2)} left on the key limit`)
+      }
+      if (data.usage_usd !== null && data.usage_usd !== undefined) {
+        facts.push(`$${Number(data.usage_usd).toFixed(2)} spent on this key`)
+      }
+      if (data.free_model_requests?.remaining !== undefined) {
+        facts.push(`${data.free_model_requests.remaining} free-model requests left today`)
+      }
+      setStatus({
+        ok: true,
+        message: `${data.message}${facts.length ? ` (${facts.join(' · ')})` : ''}`,
+      })
       setDraft('')
     } catch (error) {
       setStatus({ ok: false, message: error.message })

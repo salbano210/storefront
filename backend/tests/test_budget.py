@@ -96,6 +96,73 @@ async def test_health_endpoint(client):
     assert payload["host_key_configured"] is True
 
 
+# --- BYOK key validation (OpenRouter /key responses are mocked) -------------
+class _FakeKeyResponse:
+    def __init__(self, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _patch_openrouter(monkeypatch, status_code: int, payload: dict) -> None:
+    import httpx
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return _FakeKeyResponse(status_code, payload)
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+
+
+async def test_key_test_reports_limit_and_usage(client, monkeypatch):
+    _patch_openrouter(
+        monkeypatch,
+        200,
+        {
+            "data": {
+                "label": "demo-key",
+                "limit": 5.0,
+                "limit_remaining": 3.25,
+                "usage": 1.75,
+                "is_free_tier": False,
+                "free_model_daily_requests": {"used": 2, "limit": 1000, "remaining": 998},
+            }
+        },
+    )
+    payload = (await client.post("/api/key/test")).json()
+    assert payload["ok"] is True
+    assert payload["limit_remaining_usd"] == 3.25
+    assert payload["usage_usd"] == 1.75
+    assert payload["free_model_requests"]["remaining"] == 998
+    assert "left on this key's credit limit" in payload["message"]
+
+
+async def test_key_test_flags_exhausted_limit(client, monkeypatch):
+    _patch_openrouter(
+        monkeypatch, 200, {"data": {"limit": 5.0, "limit_remaining": 0.0, "usage": 5.0}}
+    )
+    payload = (await client.post("/api/key/test")).json()
+    assert "exhausted" in payload["message"]
+
+
+async def test_key_test_rejects_a_bad_key(client, monkeypatch):
+    _patch_openrouter(monkeypatch, 401, {})
+    response = await client.post("/api/key/test")
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_key"
+
+
 async def test_session_endpoint_reports_budget(client):
     payload = (await client.get("/api/session")).json()
     assert payload["session_id"].startswith("sess_")

@@ -41,9 +41,9 @@ async def main() -> None:
 
         if key:
             response = await client.post("/api/key/test", headers={"X-OpenRouter-Key": key})
-            print(f"POST /api/key/test (byok) -> {response.status_code} {json.dumps(response.json())[:220]}")
+            print(f"POST /api/key/test (byok) -> {response.status_code} {json.dumps(response.json())[:300]}")
             response = await client.post("/api/key/test")
-            print(f"POST /api/key/test (host) -> {response.status_code} {json.dumps(response.json())[:180]}")
+            print(f"POST /api/key/test (host) -> {response.status_code} {json.dumps(response.json())[:220]}")
 
         response = await client.post(
             "/api/key/test", headers={"X-OpenRouter-Key": "sk-or-v1-not-a-real-key-0000000000"}

@@ -72,10 +72,23 @@ async def test_key(request: Request, db: AsyncSession = Depends(get_db)) -> dict
 
     data = (response.json() or {}).get("data") or {}
     limit = data.get("limit")
+    remaining = data.get("limit_remaining")
     usage = data.get("usage")
-    remaining = None
-    if isinstance(limit, (int, float)) and isinstance(usage, (int, float)):
-        remaining = round(float(limit) - float(usage), 4)
+    free_models = data.get("free_model_daily_requests") or None
+
+    facts: list[str] = []
+    if isinstance(remaining, (int, float)):
+        facts.append(f"${float(remaining):.2f} left on this key's credit limit")
+    if isinstance(usage, (int, float)):
+        facts.append(f"${float(usage):.2f} spent on this key so far")
+
+    if isinstance(remaining, (int, float)) and float(remaining) <= 0:
+        message = (
+            "This key is valid but its credit limit is exhausted -- paid models will fail. "
+            "Raise the limit in OpenRouter or use the demo key."
+        )
+    else:
+        message = "Key works" + (f" — {', '.join(facts)}." if facts else ".")
 
     return {
         "ok": True,
@@ -83,12 +96,9 @@ async def test_key(request: Request, db: AsyncSession = Depends(get_db)) -> dict
         "label": data.get("label"),
         "is_free_tier": data.get("is_free_tier"),
         "limit_usd": limit,
+        "limit_remaining_usd": remaining,
         "usage_usd": usage,
-        "remaining_usd": remaining,
-        "message": (
-            "Key works."
-            if remaining is None or remaining > 0
-            else "Key works, but the credit balance is zero -- paid models will fail. "
-            "Add credits or use the host key."
-        ),
+        "usage_daily_usd": data.get("usage_daily"),
+        "free_model_requests": free_models,
+        "message": message,
     }
