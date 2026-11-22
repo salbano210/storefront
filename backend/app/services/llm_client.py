@@ -29,6 +29,27 @@ class LLMError(Exception):
     """Raised when a model call cannot be completed."""
 
 
+class LLMCreditsExhausted(LLMError):
+    """The OpenRouter key in use has no credits left (HTTP 402)."""
+
+
+def _is_credit_error(exc: Exception) -> bool:
+    """Detect OpenRouter's out-of-credits responses.
+
+    A capped demo key will hit this eventually, and the difference between
+    "your credits ran out" and "the provider is unreachable" matters to whoever
+    is standing in front of an audience.
+    """
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    text = str(exc).lower()
+    return (
+        "insufficient credit" in text
+        or "credit limit" in text
+        or "requires more credits" in text
+    )
+
+
 @dataclass
 class ToolCall:
     id: str
@@ -122,6 +143,7 @@ class LLMClient:
             attempts.append(self.fallback_model)
 
         last_error = "unknown error"
+        credit_error = False
         for index, candidate in enumerate(attempts):
             try:
                 return await self._call(
@@ -140,6 +162,8 @@ class LLMClient:
                 )
             except Exception as exc:  # noqa: BLE001 - normalised into LLMError
                 last_error = f"{type(exc).__name__}: {exc}"
+                if _is_credit_error(exc):
+                    credit_error = True
                 if self.logger is not None:
                     await self.logger.log(
                         events.LLM_ERROR,
@@ -161,7 +185,13 @@ class LLMClient:
                             },
                         )
                     continue
+                if credit_error:
+                    raise LLMCreditsExhausted(
+                        "the OpenRouter key in use has no credits remaining"
+                    ) from exc
                 raise LLMError(f"OpenRouter call failed: {last_error}") from exc
+        if credit_error:  # pragma: no cover - defensive
+            raise LLMCreditsExhausted("the OpenRouter key in use has no credits remaining")
         raise LLMError(f"OpenRouter call failed: {last_error}")  # pragma: no cover
 
 

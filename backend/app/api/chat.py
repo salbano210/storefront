@@ -92,6 +92,15 @@ async def chat(
             user_message=payload.message.strip(),
             llm=llm,
         )
+    except llm_client.LLMCreditsExhausted as exc:
+        raise _http_error(
+            402,
+            "credits_exhausted",
+            (
+                "The OpenRouter key in use has run out of credits, so the agents can't run. "
+                "Paste your own key in the key panel, or top up the demo key, to keep going."
+            ),
+        ) from exc
     except LLMError as exc:
         raise _http_error(
             502,

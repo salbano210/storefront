@@ -116,7 +116,10 @@ export default function CreatorChat() {
         {
           role: 'system',
           content:
-            err.code === 'daily_budget' || err.code === 'session_message_cap'
+            err.code === 'daily_budget' ||
+            err.code === 'session_message_cap' ||
+            err.code === 'credits_exhausted' ||
+            err.code === 'no_api_key'
               ? err.message
               : `The demo could not complete that request: ${err.message}`,
         },
