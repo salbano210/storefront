@@ -273,6 +273,10 @@ async def test_validate_shipping_address_offers_a_correction(tool_context):
         assert result["ok"] is True
         assert result["valid"] is False
         assert result["suggestion"] == "123 Example Street, Boston, MA 02110"
+        # The tool tells the model what to do about it, not just what is wrong.
+        assert "did not validate" in result["message"]
+        assert "123 Example Street, Boston, MA 02110" in result["message"]
+        assert "do not place an order" in result["message"]
 
         rows = await _events(ctx.conversation_id, db)
         assert any(row.type == "address_validated" for row in rows)

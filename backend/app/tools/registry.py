@@ -400,6 +400,23 @@ async def _validate_shipping_address(args: dict, ctx: ToolContext) -> dict:
     on_file = _address_on_file(ctx)
     check = addresses.validate(address, on_file=on_file)
 
+    if check["valid"]:
+        message = (
+            f"Address validated as {check['normalised']}. "
+            "You can now call issue_gift with that address."
+        )
+    else:
+        message = (
+            f"That address did not validate: {check['reason']}. Tell the creator what was wrong, "
+            "and do not place an order."
+        )
+        if check["suggestion"]:
+            message += (
+                " Offer them this correction and ask them to confirm it: "
+                f"{check['suggestion']}."
+            )
+    check["message"] = message
+
     await ctx.logger.log(
         events.ADDRESS_VALIDATED,
         agent=ctx.agent,
