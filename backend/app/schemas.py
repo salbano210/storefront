@@ -11,10 +11,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import metrics
+
 Intent = Literal["gift_request", "creator_pitch", "general_inquiry"]
+Decision = Literal["pass", "reject"]
 
 AGENT_KEYS = ("router", "gift_request", "creator_pitch", "general_inquiry")
-WEIGHT_KEYS = ("category", "engagement", "followers", "brand_revenue", "storefront_sales")
 
 
 # ---------------------------------------------------------------------------
@@ -29,103 +31,188 @@ class BrandInfo(BaseModel):
     tone: str = Field("warm, concise, professional", max_length=200)
 
 
-class GiftingCriteria(BaseModel):
+class CriterionRule(BaseModel):
+    """One admin-configured condition, drawn from the verified-metric registry.
+
+    Examples::
+
+        {"metric": "followers",  "operator": "gte",          "value": 50000}
+        {"metric": "categories", "operator": "includes_any", "value": ["beauty"]}
+
+    Validation happens here, so an unknown metric or a bad operator is a 422 at
+    save time rather than a surprise mid-conversation.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    minimum_followers: int = Field(10000, ge=0, le=100_000_000)
-    minimum_engagement_rate: float = Field(0.03, ge=0, le=1)
-    minimum_brand_revenue: float = Field(500, ge=0)
-    required_categories: list[str] = Field(default_factory=list)
-    notes: str = Field("", max_length=600)
+    metric: str = Field(min_length=1, max_length=48)
+    operator: str = Field(min_length=1, max_length=24)
+    value: Any = None
+    label: str = Field("", max_length=80)
 
-    @field_validator("required_categories")
-    @classmethod
-    def _clean_categories(cls, value: list[str]) -> list[str]:
-        return [c.strip().lower() for c in value if c.strip()]
+    @model_validator(mode="after")
+    def _validate_against_registry(self) -> "CriterionRule":
+        metrics.validate_rule(self.metric, self.operator, self.value)
+        self.value = metrics.normalise_value(
+            metrics.get_metric(self.metric), self.value
+        )
+        return self
+
+    def describe(self) -> str:
+        return metrics.describe_rule(self.metric, self.operator, self.value)
 
 
-class EligibleProduct(BaseModel):
+class GiftOffer(BaseModel):
+    """A gift the brand will send, with its own eligibility criteria.
+
+    Criteria are an AND. An empty list means every creator qualifies, which is a
+    legitimate configuration for a low-cost sample.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
+    id: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=120)
     sku: str = Field(min_length=1, max_length=64)
     description: str = Field("", max_length=400)
-    eligible: bool = True
+    url: str = Field("", max_length=500)
     retail_price: float = Field(0.0, ge=0)
+    tags: list[str] = Field(default_factory=list)
+    criteria: list[CriterionRule] = Field(default_factory=list)
 
     @field_validator("sku")
     @classmethod
     def _normalise_sku(cls, value: str) -> str:
         return value.strip().upper()
 
+    @field_validator("id")
+    @classmethod
+    def _normalise_id(cls, value: str) -> str:
+        return value.strip().lower().replace(" ", "-")
+
+    @field_validator("tags")
+    @classmethod
+    def _clean_tags(cls, value: list[str]) -> list[str]:
+        return [tag.strip().lower() for tag in value if tag.strip()]
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("url must start with http:// or https://")
+        return value
+
 
 class GiftingConfig(BaseModel):
+    """The brand's gift offers.
+
+    Each offer carries its *complete* criteria -- there is no brand-level gate, so
+    what a creator can receive is decided in exactly one place per gift.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    criteria: GiftingCriteria = Field(default_factory=GiftingCriteria)
-    eligible_products: list[EligibleProduct] = Field(default_factory=list)
+    offers: list[GiftOffer] = Field(default_factory=list)
+    notes: str = Field("", max_length=600)
 
     @model_validator(mode="after")
-    def _unique_skus(self) -> "GiftingConfig":
-        skus = [p.sku for p in self.eligible_products]
+    def _unique_offers(self) -> "GiftingConfig":
+        if not self.offers:
+            raise ValueError("at least one gift offer must be configured")
+        ids = [offer.id for offer in self.offers]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate gift ids in offers")
+        skus = [offer.sku for offer in self.offers]
         if len(skus) != len(set(skus)):
-            raise ValueError("duplicate SKUs in eligible_products")
-        if not any(p.eligible for p in self.eligible_products):
-            raise ValueError("at least one product must be eligible for gifting")
+            raise ValueError("duplicate SKUs in offers")
+        return self
+
+    def resolve(self, identifier: str) -> GiftOffer | None:
+        """Find an offer by id, SKU or name.
+
+        Models reliably pass *whichever* identifier they noticed in the previous
+        tool result -- often the SKU. Refusing those turns a working conversation
+        into a dead end, so accept all three (case-insensitively).
+        """
+        wanted = (identifier or "").strip().lower()
+        if not wanted:
+            return None
+        for offer in self.offers:
+            if offer.id == wanted or offer.sku.lower() == wanted or offer.name.lower() == wanted:
+                return offer
+        return None
+
+    def find(self, sku: str) -> GiftOffer | None:
+        return self.resolve(sku)
+
+
+class PitchScoringInput(BaseModel):
+    """One metric the brand chooses to score pitches on, with its ideal value.
+
+    Component score = actual / ideal, capped at 1, then multiplied by the weight.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str = Field(min_length=1, max_length=48)
+    weight: float = Field(0, ge=0, le=100)
+    ideal: Any = None
+
+    @model_validator(mode="after")
+    def _validate_against_registry(self) -> "PitchScoringInput":
+        metric = metrics.get_metric(self.metric)
+        if not metric.scorable:
+            raise ValueError(
+                f"'{metric.key}' cannot be used for scoring -- pick a numeric metric "
+                f"or 'categories'"
+            )
+        if self.ideal is None:
+            self.ideal = metric.default_ideal
+        if self.ideal is None:
+            raise ValueError(f"'{metric.key}' needs an ideal value")
+        # An ideal is a value of the metric's own shape, so the rule validator applies.
+        operator = "includes_any" if metric.shape == "list" else "gte"
+        metrics.validate_rule(metric.key, operator, self.ideal)
+        self.ideal = metrics.normalise_value(metric, self.ideal)
         return self
 
 
-class PitchCriteria(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ClassificationLabel(BaseModel):
+    """A tag the pitch agent can apply -- and what that tag *means*.
 
-    preferred_categories: list[str] = Field(default_factory=lambda: ["beauty", "skincare"])
-    minimum_engagement_rate: float = Field(0.025, ge=0, le=1)
-    minimum_followers: int = Field(0, ge=0)
-    minimum_brand_revenue: float = Field(0, ge=0)
-    preferred_audience_age: str = Field("22-35", max_length=20)
+    The tag is chosen by score threshold, never by the model. The decision it
+    carries is written onto the conversation, and ``response_instructions`` tells
+    the agent how to follow up (ask for more detail on a pass, let them down
+    gently on a reject).
+    """
 
-    @field_validator("preferred_categories")
-    @classmethod
-    def _clean(cls, value: list[str]) -> list[str]:
-        return [c.strip().lower() for c in value if c.strip()]
-
-
-class PitchTargets(BaseModel):
-    """'Ideal' values a creator is scored against (component = actual / ideal, capped at 1)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    ideal_followers: int = Field(50000, gt=0)
-    ideal_engagement_rate: float = Field(0.05, gt=0, le=1)
-    ideal_brand_revenue: float = Field(10000, gt=0)
-    ideal_storefront_sales: float = Field(25000, gt=0)
-
-
-class LabelThreshold(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(min_length=1, max_length=64)
     min_score: float = Field(0, ge=0, le=100)
+    decision: Decision = "reject"
+    response_instructions: str = Field("", max_length=1000)
+    description: str = Field("", max_length=300)
 
 
 class PitchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    criteria: PitchCriteria = Field(default_factory=PitchCriteria)
-    classification_labels: list[LabelThreshold] = Field(default_factory=list)
-    targets: PitchTargets = Field(default_factory=PitchTargets)
-    weights: dict[str, float] = Field(
-        default_factory=lambda: {
-            "category": 30,
-            "engagement": 25,
-            "followers": 20,
-            "brand_revenue": 15,
-            "storefront_sales": 10,
-        }
-    )
+    scoring: list[PitchScoringInput] = Field(default_factory=list)
+    classification_labels: list[ClassificationLabel] = Field(default_factory=list)
+    notes: str = Field("", max_length=600)
 
     @model_validator(mode="after")
     def _validate_pitch(self) -> "PitchConfig":
+        if not self.scoring:
+            raise ValueError("select at least one metric to score pitches on")
+        keys = [item.metric for item in self.scoring]
+        if len(keys) != len(set(keys)):
+            raise ValueError("scoring metrics must be unique")
+        if sum(item.weight for item in self.scoring) <= 0:
+            raise ValueError("scoring weights must sum to a positive number")
+
         labels = [item.label for item in self.classification_labels]
         if not labels:
             raise ValueError("classification_labels cannot be empty")
@@ -137,15 +224,14 @@ class PitchConfig(BaseModel):
         )
         if min(item.min_score for item in self.classification_labels) > 0:
             raise ValueError("one classification label must have min_score 0 (the fallback)")
-        missing = [key for key in WEIGHT_KEYS if key not in self.weights]
-        if missing:
-            raise ValueError(f"weights missing keys: {', '.join(missing)}")
-        unknown = [key for key in self.weights if key not in WEIGHT_KEYS]
-        if unknown:
-            raise ValueError(f"weights has unknown keys: {', '.join(unknown)}")
-        if sum(self.weights.values()) <= 0:
-            raise ValueError("weights must sum to a positive number")
         return self
+
+    def label_for_score(self, score: float) -> ClassificationLabel:
+        """Highest configured label whose threshold the score reaches."""
+        for item in self.classification_labels:
+            if score >= item.min_score:
+                return item
+        return self.classification_labels[-1]
 
 
 class AgentInstruction(BaseModel):

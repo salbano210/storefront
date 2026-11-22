@@ -50,6 +50,8 @@ class Conversation(Base):
     creator_id: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(24), default="active")
     pending_agent: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # pass | reject -- set by the pitch agent's tag, surfaced in the chat and the logs.
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
     config_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -115,6 +117,7 @@ class TagApplied(Base):
     conversation_id: Mapped[str] = mapped_column(String(64))
     creator_id: Mapped[str] = mapped_column(String(64), index=True)
     tag: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

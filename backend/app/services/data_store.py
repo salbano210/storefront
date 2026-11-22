@@ -20,7 +20,6 @@ from ..schemas import CreatorCard, CreatorProfile
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 CREATORS_PATH = DATA_DIR / "creators.json"
-PRODUCTS_PATH = DATA_DIR / "products.json"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -31,15 +30,6 @@ def _read_json(path: Path) -> dict[str, Any]:
 def seed_profiles() -> list[CreatorProfile]:
     """The repo fixtures as validated profiles."""
     return [CreatorProfile(**item) for item in _read_json(CREATORS_PATH).get("creators", [])]
-
-
-def list_products() -> list[dict[str, Any]]:
-    """Full product catalog, including SKUs that are not giftable.
-
-    Seeds the default brand config; the live catalog is the config's
-    ``eligible_products``.
-    """
-    return list(_read_json(PRODUCTS_PATH).get("products", []))
 
 
 async def seed(db: AsyncSession) -> int:

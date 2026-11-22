@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import metrics
 from ..db import get_db
 from ..schemas import ConfigUpdateRequest
 from ..services import config_manager, event_logger as events
@@ -29,6 +30,21 @@ async def read_config(
 @router.get("/schema")
 async def read_schema(_: str = Depends(require_admin)) -> dict:
     return config_manager.public_schema()
+
+
+@router.get("/metrics")
+async def read_metrics(_: str = Depends(require_admin)) -> dict:
+    """The verified-metric registry -- this is what fills the admin dropdowns.
+
+    Every criterion and every scoring input is drawn from this list, so the UI
+    never hard-codes a metric name.
+    """
+    return {
+        "metrics": metrics.metric_catalog(),
+        "operators": [
+            {"value": key, "label": label} for key, label in metrics.OPERATOR_LABELS.items()
+        ],
+    }
 
 
 @router.put("")
@@ -61,8 +77,24 @@ async def update_config(
         payload={
             "version": version,
             "updated_by": payload.updated_by or "admin",
-            "gifting_criteria": config.gifting.criteria.model_dump(),
-            "pitch_criteria": config.pitch.criteria.model_dump(),
+            "gift_offers": [
+                {
+                    "id": offer.id,
+                    "sku": offer.sku,
+                    "name": offer.name,
+                    "retail_price": offer.retail_price,
+                    "criteria": [rule.describe() for rule in offer.criteria],
+                }
+                for offer in config.gifting.offers
+            ],
+            "pitch_scoring": [
+                {
+                    "metric": item.metric,
+                    "weight": item.weight,
+                    "ideal": item.ideal,
+                }
+                for item in config.pitch.scoring
+            ],
             "classification_labels": [
                 item.model_dump() for item in config.pitch.classification_labels
             ],

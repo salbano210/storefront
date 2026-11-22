@@ -55,7 +55,8 @@ def test_ordinary_creator_messages_are_not_flagged():
 
 def test_prompt_leak_detection():
     assert guardrails.find_prompt_leak("HARD RULES: never state a gift was ordered") is not None
-    assert guardrails.find_prompt_leak("GIFTING CATALOG (SKU | product | giftable)") is not None
+    assert guardrails.find_prompt_leak("GIFT OFFERS (SKU | product | price | link)") is not None
+    assert guardrails.find_prompt_leak("PITCH SCORING (the metrics this brand scores)") is not None
     assert guardrails.find_prompt_leak("The Barrier Repair Serum is on its way!") is None
 
 
@@ -89,7 +90,7 @@ async def test_fabricated_gift_approval_is_replaced(client, use_fake_llm):
     blocked = [event for event in events if event["type"] == "guardrail_blocked"]
     assert any(event["payload"]["guardrail"] == "ungrounded_gift_claim" for event in blocked)
     # the replacement quotes the real, verified numbers
-    assert "10,000" in payload["reply"] and "8,210" in payload["reply"]
+    assert "8,210" in payload["reply"] and "50,000" in payload["reply"]
 
     transcript = (await client.get(f"/api/conversations/{payload['conversation_id']}")).json()
     agent_messages = [m["content"] for m in transcript["messages"] if m["role"] == "agent"]

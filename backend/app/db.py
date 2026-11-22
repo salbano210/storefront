@@ -72,6 +72,43 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await ensure_columns()
+
+
+async def ensure_columns() -> list[str]:
+    """Add columns that exist in the models but not yet in the database.
+
+    ``create_all`` only creates missing *tables*, so a newly added column would
+    never reach an existing SQLite file. Only nullable columns are added, which
+    keeps this safe to run on every boot.
+    """
+    import sqlalchemy as sa
+
+    from . import models  # noqa: F401
+
+    added: list[str] = []
+
+    async with engine.begin() as conn:
+
+        def _sync(sync_conn):
+            inspector = sa.inspect(sync_conn)
+            tables = set(inspector.get_table_names())
+            for table in Base.metadata.sorted_tables:
+                if table.name not in tables:
+                    continue
+                present = {column["name"] for column in inspector.get_columns(table.name)}
+                for column in table.columns:
+                    if column.name in present or not column.nullable:
+                        continue
+                    ddl = (
+                        f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" '
+                        f"{column.type.compile(sync_conn.dialect)}"
+                    )
+                    sync_conn.execute(sa.text(ddl))
+                    added.append(f"{table.name}.{column.name}")
+
+        await conn.run_sync(_sync)
+    return added
 
 
 async def get_db():

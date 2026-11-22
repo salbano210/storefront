@@ -11,6 +11,7 @@ import sys
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -30,7 +31,7 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="storefront-tests-")
 from app.bootstrap import bootstrap  # noqa: E402
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import GiftOrder  # noqa: E402
+from app.models import Conversation, GiftOrder  # noqa: E402
 from app.services import config_manager, conversation_store as store, data_store, llm_client  # noqa: E402
 from app.services.event_logger import EventLogger  # noqa: E402
 from app.tools.registry import ToolContext  # noqa: E402
@@ -67,23 +68,41 @@ async def client():
 
 
 @asynccontextmanager
-async def _tool_context(creator_id: str, agent: str = "gift_request_agent", conversation_id: str = "conv_unit"):
+async def _tool_context(
+    creator_id: str,
+    agent: str = "gift_request_agent",
+    conversation_id: str | None = None,
+):
+    """A real ToolContext, including a real conversation row.
+
+    The conversation exists because tools write to it (the pitch decision lands
+    there), so a context without one would not be representative.
+    """
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.get_current(db)
         creator = await data_store.get_creator(db, creator_id)
         assert creator is not None, f"unknown creator {creator_id}"
         session = await store.get_or_create_session(db, f"sess_unit_{creator_id}_{agent}")
+        conversation = Conversation(
+            id=conversation_id or f"conv_unit_{uuid4().hex[:8]}",
+            session_id=session.id,
+            creator_id=creator.id,
+            config_version=version,
+        )
+        db.add(conversation)
+        await db.commit()
+
         logger = EventLogger(
             db,
             session_id=session.id,
-            conversation_id=conversation_id,
+            conversation_id=conversation.id,
             creator_id=creator.id,
             config_version=version,
         )
         yield ToolContext(
             db=db,
             session_id=session.id,
-            conversation_id=conversation_id,
+            conversation_id=conversation.id,
             creator=creator,
             config=config,
             config_version=version,

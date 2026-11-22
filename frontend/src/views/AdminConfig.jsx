@@ -1,19 +1,54 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, formatters } from '../api'
+import { api } from '../api'
 import { useSession } from '../session.jsx'
 import {
-  AgentEditor,
   Field,
-  LabelRows,
   ModelsEditor,
-  NumberInput,
-  ProductRows,
+  ScoringRows,
   Section,
+  TagRows,
 } from '../components/AdminFields.jsx'
+import GiftRows from '../components/GiftRows.jsx'
 import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
+}
+
+/* The admin tree. Two levels of expansion, exactly as an operator would think
+ * about it: the brand contains agents, and the agents contain their rules. */
+const TREE = [
+  { id: 'brand', label: 'Brand', hint: 'name, positioning, tone' },
+  { id: 'gifting', label: 'Gifting agent', group: 'Agents', hint: 'gifts and their criteria' },
+  { id: 'pitch', label: 'Pitch agent', group: 'Agents', hint: 'scoring, tags, follow-ups' },
+  { id: 'router', label: 'Router', group: 'Agents', hint: 'intent classification' },
+  { id: 'general_inquiry', label: 'General handler', group: 'Agents', hint: 'everything else' },
+  { id: 'models', label: 'Models', hint: 'which model runs each agent' },
+]
+
+function AgentFields({ agentKey, agents, onChange }) {
+  const value = agents[agentKey] || { instructions: '', constraints: '' }
+  function patch(key, next) {
+    onChange({ ...agents, [agentKey]: { ...value, [key]: next } })
+  }
+  return (
+    <div className="admin-grid">
+      <Field label="Instructions" wide hint="What this agent should do, in your words.">
+        <textarea
+          rows={3}
+          value={value.instructions}
+          onChange={(event) => patch('instructions', event.target.value)}
+        />
+      </Field>
+      <Field label="Constraints" wide hint="What it must never do.">
+        <textarea
+          rows={3}
+          value={value.constraints}
+          onChange={(event) => patch('constraints', event.target.value)}
+        />
+      </Field>
+    </div>
+  )
 }
 
 export default function AdminConfig() {
@@ -23,6 +58,8 @@ export default function AdminConfig() {
   const [draft, setDraft] = useState(null)
   const [defaults, setDefaults] = useState(null)
   const [catalog, setCatalog] = useState([])
+  const [metricCatalog, setMetricCatalog] = useState([])
+  const [node, setNode] = useState('gifting')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [status, setStatus] = useState(null)
@@ -35,9 +72,10 @@ export default function AdminConfig() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [config, models] = await Promise.all([
+      const [config, models, metrics] = await Promise.all([
         api('/api/config'),
         api('/api/models').catch(() => ({ models: [] })),
+        api('/api/config/metrics').catch(() => ({ metrics: [] })),
       ])
       setVersion(config.version)
       setDraft(config.config)
@@ -45,6 +83,7 @@ export default function AdminConfig() {
       setDefaults(config.defaults)
       setJsonDraft(JSON.stringify(config.config, null, 2))
       setCatalog(models.models || [])
+      setMetricCatalog(metrics.metrics || [])
       setError(null)
       setGateError('')
     } catch (err) {
@@ -274,239 +313,211 @@ export default function AdminConfig() {
           />
         </section>
       ) : (
-        <>
-          <Section title="Brand" description="Used in every prompt and reply.">
-            <Field label="Brand name">
-              <input
-                value={draft.brand.name}
-                onChange={(event) => update(['brand', 'name'], event.target.value)}
-              />
-            </Field>
-            <Field label="Tone of voice">
-              <input
-                value={draft.brand.tone}
-                onChange={(event) => update(['brand', 'tone'], event.target.value)}
-              />
-            </Field>
-            <Field label="Description" wide>
-              <textarea
-                rows={2}
-                value={draft.brand.description}
-                onChange={(event) => update(['brand', 'description'], event.target.value)}
-              />
-            </Field>
-            <Field label="Positioning" wide hint="Feeds the pitch agent's sense of brand fit.">
-              <textarea
-                rows={3}
-                value={draft.brand.positioning}
-                onChange={(event) => update(['brand', 'positioning'], event.target.value)}
-              />
-            </Field>
-          </Section>
+        <div className="admin-tree-layout">
+          <nav className="admin-tree">
+            <div className="tree-root">
+              <span className="tree-caret">▾</span>
+              <span className="tree-root-label">{draft.brand.name}</span>
+            </div>
 
-          <Section
-            title="Gifting criteria"
-            description="Evaluated in code against verified profile data. The model never does this maths."
-          >
-            <Field label="Minimum followers">
-              <NumberInput
-                value={draft.gifting.criteria.minimum_followers}
-                min={0}
-                onChange={(value) => update(['gifting', 'criteria', 'minimum_followers'], value)}
-              />
-            </Field>
-            <Field label="Minimum engagement rate" hint="Decimal, e.g. 0.03 = 3%">
-              <NumberInput
-                value={draft.gifting.criteria.minimum_engagement_rate}
-                step={0.001}
-                min={0}
-                max={1}
-                onChange={(value) =>
-                  update(['gifting', 'criteria', 'minimum_engagement_rate'], value)
-                }
-              />
-            </Field>
-            <Field label="Minimum brand-attributed revenue">
-              <NumberInput
-                value={draft.gifting.criteria.minimum_brand_revenue}
-                min={0}
-                suffix="USD"
-                onChange={(value) =>
-                  update(['gifting', 'criteria', 'minimum_brand_revenue'], value)
-                }
-              />
-            </Field>
-            <Field label="Required categories" hint="Comma separated. Empty means any category.">
-              <input
-                value={draft.gifting.criteria.required_categories.join(', ')}
-                onChange={(event) =>
-                  update(
-                    ['gifting', 'criteria', 'required_categories'],
-                    event.target.value
-                      .split(',')
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  )
-                }
-              />
-            </Field>
-            <Field label="Notes for the agent" wide>
-              <textarea
-                rows={2}
-                value={draft.gifting.criteria.notes}
-                onChange={(event) => update(['gifting', 'criteria', 'notes'], event.target.value)}
-              />
-            </Field>
-          </Section>
+            <button
+              type="button"
+              className={`tree-item${node === 'brand' ? ' active' : ''}`}
+              onClick={() => setNode('brand')}
+            >
+              Brand
+            </button>
 
-          <Section
-            title="Gifting catalog"
-            description="Only SKUs marked giftable can ever be issued — the order tool re-checks this."
-          >
-            <ProductRows
-              products={draft.gifting.eligible_products}
-              onChange={(value) => update(['gifting', 'eligible_products'], value)}
-            />
-          </Section>
+            <div className="tree-group">
+              <span className="tree-caret">▾</span>
+              <span className="tree-group-label">Agents</span>
+            </div>
 
-          <Section
-            title="Pitch criteria"
-            description="Feeds the deterministic 0-100 fit score. The label is chosen by threshold, never by the model."
-          >
-            <Field label="Preferred categories" hint="Comma separated.">
-              <input
-                value={draft.pitch.criteria.preferred_categories.join(', ')}
-                onChange={(event) =>
-                  update(
-                    ['pitch', 'criteria', 'preferred_categories'],
-                    event.target.value
-                      .split(',')
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  )
-                }
-              />
-            </Field>
-            <Field label="Minimum engagement rate">
-              <NumberInput
-                value={draft.pitch.criteria.minimum_engagement_rate}
-                step={0.001}
-                min={0}
-                max={1}
-                onChange={(value) => update(['pitch', 'criteria', 'minimum_engagement_rate'], value)}
-              />
-            </Field>
-            <Field label="Minimum followers">
-              <NumberInput
-                value={draft.pitch.criteria.minimum_followers}
-                min={0}
-                onChange={(value) => update(['pitch', 'criteria', 'minimum_followers'], value)}
-              />
-            </Field>
-            <Field label="Minimum brand revenue">
-              <NumberInput
-                value={draft.pitch.criteria.minimum_brand_revenue}
-                min={0}
-                suffix="USD"
-                onChange={(value) => update(['pitch', 'criteria', 'minimum_brand_revenue'], value)}
-              />
-            </Field>
-            <Field label="Preferred audience age">
-              <input
-                value={draft.pitch.criteria.preferred_audience_age}
-                onChange={(event) =>
-                  update(['pitch', 'criteria', 'preferred_audience_age'], event.target.value)
-                }
-              />
-            </Field>
-          </Section>
-
-          <Section
-            title="Classification labels"
-            description="Ordered by score threshold. One label must have a minimum score of 0."
-          >
-            <LabelRows
-              labels={draft.pitch.classification_labels}
-              onChange={(value) => update(['pitch', 'classification_labels'], value)}
-            />
-          </Section>
-
-          <Section title="Ideal profile targets" description="Score = actual / ideal, capped at 100%.">
-            <Field label="Ideal followers">
-              <NumberInput
-                value={draft.pitch.targets.ideal_followers}
-                min={1}
-                onChange={(value) => update(['pitch', 'targets', 'ideal_followers'], value)}
-              />
-            </Field>
-            <Field label="Ideal engagement rate">
-              <NumberInput
-                value={draft.pitch.targets.ideal_engagement_rate}
-                step={0.005}
-                min={0.001}
-                max={1}
-                onChange={(value) => update(['pitch', 'targets', 'ideal_engagement_rate'], value)}
-              />
-            </Field>
-            <Field label="Ideal brand revenue">
-              <NumberInput
-                value={draft.pitch.targets.ideal_brand_revenue}
-                min={1}
-                suffix="USD"
-                onChange={(value) => update(['pitch', 'targets', 'ideal_brand_revenue'], value)}
-              />
-            </Field>
-            <Field label="Ideal Storefront sales">
-              <NumberInput
-                value={draft.pitch.targets.ideal_storefront_sales}
-                min={1}
-                suffix="USD"
-                onChange={(value) => update(['pitch', 'targets', 'ideal_storefront_sales'], value)}
-              />
-            </Field>
-          </Section>
-
-          <Section title="Scoring weights" description="Points available per component. Must sum above zero.">
-            {Object.entries(draft.pitch.weights).map(([key, value]) => (
-              <Field key={key} label={key.replaceAll('_', ' ')}>
-                <NumberInput
-                  value={value}
-                  min={0}
-                  max={100}
-                  onChange={(next) => update(['pitch', 'weights', key], next)}
-                />
-              </Field>
+            {TREE.filter((item) => item.group === 'Agents').map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`tree-item nested${node === item.id ? ' active' : ''}`}
+                onClick={() => setNode(item.id)}
+              >
+                <span className="tree-label">{item.label}</span>
+                <span className="tree-hint">{item.hint}</span>
+              </button>
             ))}
-          </Section>
 
-          <Section
-            title="Agent instructions"
-            description="Appended to each agent's system prompt. Business rules stay in code — these steer tone and judgement."
-          >
-            <AgentEditor agents={draft.agents} onChange={(value) => update(['agents'], value)} />
-          </Section>
+            <button
+              type="button"
+              className={`tree-item${node === 'models' ? ' active' : ''}`}
+              onClick={() => setNode('models')}
+            >
+              <span className="tree-label">Models</span>
+              <span className="tree-hint">which model runs each agent</span>
+            </button>
+          </nav>
 
-          <Section
-            title="Models"
-            description="Per-agent OpenRouter model. Cheap tool-capable models are plenty for this workflow."
-          >
-            <ModelsEditor
-              models={draft.models}
-              catalog={catalog}
-              onChange={(value) => update(['models'], value)}
-            />
-          </Section>
+          <div className="admin-pane">
+            {node === 'brand' && (
+              <Section title="Brand" description="Used in every prompt and reply.">
+                <Field label="Brand name">
+                  <input
+                    value={draft.brand.name}
+                    onChange={(event) => update(['brand', 'name'], event.target.value)}
+                  />
+                </Field>
+                <Field label="Tone of voice">
+                  <input
+                    value={draft.brand.tone}
+                    onChange={(event) => update(['brand', 'tone'], event.target.value)}
+                  />
+                </Field>
+                <Field label="Description" wide>
+                  <textarea
+                    rows={2}
+                    value={draft.brand.description}
+                    onChange={(event) => update(['brand', 'description'], event.target.value)}
+                  />
+                </Field>
+                <Field label="Positioning" wide hint="Feeds the pitch agent's sense of brand fit.">
+                  <textarea
+                    rows={3}
+                    value={draft.brand.positioning}
+                    onChange={(event) => update(['brand', 'positioning'], event.target.value)}
+                  />
+                </Field>
+              </Section>
+            )}
 
-          <section className="admin-footnote">
-            <p className="muted small">
-              Saved configuration is versioned. Every log event records the version in force, so you
-              can prove which rules produced a decision. Defaults come from{' '}
-              <code>backend/app/data/brand_config.default.json</code>
-              {defaults && <> (v1: min followers {formatters.followers(defaults.gifting.criteria.minimum_followers)})</>}.
-            </p>
-          </section>
+            {node === 'gifting' && (
+              <>
+                <Section
+                  title="Gifting agent"
+                  description="Handles every gift request. Each gift carries its own criteria — there is no brand-level gate."
+                >
+                  <AgentFields
+                    agentKey="gift_request"
+                    agents={draft.agents}
+                    onChange={(value) => update(['agents'], value)}
+                  />
+                </Section>
 
-        </>
+                <Section
+                  title={`Gifts (${draft.gifting.offers.length})`}
+                  description="Click a gift to open it. Criteria are an AND — every rule must pass. A creator can qualify for some gifts and not others."
+                >
+                  <GiftRows
+                    offers={draft.gifting.offers}
+                    metrics={metricCatalog}
+                    onChange={(value) => update(['gifting', 'offers'], value)}
+                  />
+                </Section>
+
+                <Section title="Notes" description="Free text for whoever maintains this config.">
+                  <Field label="Gifting notes" wide>
+                    <textarea
+                      rows={2}
+                      value={draft.gifting.notes || ''}
+                      onChange={(event) => update(['gifting', 'notes'], event.target.value)}
+                    />
+                  </Field>
+                </Section>
+              </>
+            )}
+
+            {node === 'pitch' && (
+              <>
+                <Section
+                  title="Pitch agent"
+                  description="Scores every inbound pitch on the metrics you select, picks a tag by threshold, then follows that tag's instructions."
+                >
+                  <AgentFields
+                    agentKey="creator_pitch"
+                    agents={draft.agents}
+                    onChange={(value) => update(['agents'], value)}
+                  />
+                </Section>
+
+                <Section
+                  title="Scoring metrics"
+                  description="Only the metrics you tick here affect the score. Score = actual / ideal, capped, weighted, normalised to 0–100."
+                >
+                  <ScoringRows
+                    scoring={draft.pitch.scoring}
+                    metrics={metricCatalog.filter((metric) => metric.scorable)}
+                    onChange={(value) => update(['pitch', 'scoring'], value)}
+                  />
+                </Section>
+
+                <Section
+                  title="Tags and follow-ups"
+                  description="The score picks a tag; the tag decides pass or reject and what the agent says next."
+                >
+                  <TagRows
+                    labels={draft.pitch.classification_labels}
+                    onChange={(value) => update(['pitch', 'classification_labels'], value)}
+                  />
+                </Section>
+
+                <Section title="Notes" description="Free text for whoever maintains this config.">
+                  <Field label="Pitch notes" wide>
+                    <textarea
+                      rows={2}
+                      value={draft.pitch.notes || ''}
+                      onChange={(event) => update(['pitch', 'notes'], event.target.value)}
+                    />
+                  </Field>
+                </Section>
+              </>
+            )}
+
+            {node === 'router' && (
+              <Section
+                title="Routing agent"
+                description="Classifies the creator's intent and hands off. It never approves anything itself."
+              >
+                <AgentFields
+                  agentKey="router"
+                  agents={draft.agents}
+                  onChange={(value) => update(['agents'], value)}
+                />
+              </Section>
+            )}
+
+            {node === 'general_inquiry' && (
+              <Section
+                title="General handler"
+                description="Everything that is not a gift request or a pitch. It has no business tools at all."
+              >
+                <AgentFields
+                  agentKey="general_inquiry"
+                  agents={draft.agents}
+                  onChange={(value) => update(['agents'], value)}
+                />
+              </Section>
+            )}
+
+            {node === 'models' && (
+              <Section
+                title="Models"
+                description="Per-agent OpenRouter model. Cheap tool-capable models are plenty for this workflow."
+              >
+                <ModelsEditor
+                  models={draft.models}
+                  catalog={catalog}
+                  onChange={(value) => update(['models'], value)}
+                />
+              </Section>
+            )}
+
+            <section className="admin-footnote">
+              <p className="muted small">
+                Saved configuration is versioned. Every log event records the version in force, so you
+                can prove which rules produced a decision. Defaults come from{' '}
+                <code>backend/app/data/brand_config.default.json</code>
+                {defaults && <> ({defaults.gifting.offers.length} gifts, {defaults.pitch.scoring.length} scoring metrics)</>}.
+              </p>
+            </section>
+          </div>
+        </div>
       )}
     </div>
   )

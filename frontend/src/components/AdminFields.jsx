@@ -54,81 +54,168 @@ export function Section({ title, description, children, actions }) {
   )
 }
 
-export function ProductRows({ products, onChange }) {
-  function patch(index, key, value) {
-    onChange(products.map((item, i) => (i === index ? { ...item, [key]: value } : item)))
+export function round(value) {
+  if (value === '' || value === null || value === undefined) return ''
+  return Math.round(Number(value) * 1000) / 1000
+}
+
+export function defaultFor(metric, operator) {
+  if (!metric) return ''
+  if (metric.shape === 'list') return metric.default_ideal || []
+  if (metric.shape === 'numeric') {
+    if (operator === 'between') return [0, 0]
+    if (metric.kind === 'percent') return 0.03
+    return metric.default_ideal ?? 0
   }
+  return metric.value_options?.[0] || ''
+}
+
+/**
+ * The value editor for one metric. The input changes shape with the metric:
+ * a number box, a pair for `between`, a comma list, or a select of known values.
+ * Percent metrics are shown as percentages but stored as fractions.
+ */
+export function ValueInput({ metric, operator, value, onChange }) {
+  if (!metric) return null
+
+  if (metric.shape === 'numeric' && operator === 'between') {
+    const pair = Array.isArray(value) ? value : [0, 0]
+    const scale = metric.kind === 'percent' ? 100 : 1
+    return (
+      <span className="value-pair">
+        <NumberInput
+          value={round(pair[0] * scale)}
+          step={metric.kind === 'percent' ? 0.1 : 1}
+          onChange={(next) => onChange([Number(next) / scale, pair[1]])}
+        />
+        <span className="muted small">and</span>
+        <NumberInput
+          value={round(pair[1] * scale)}
+          step={metric.kind === 'percent' ? 0.1 : 1}
+          onChange={(next) => onChange([pair[0], Number(next) / scale])}
+        />
+        {metric.kind === 'percent' && <span className="muted small">%</span>}
+      </span>
+    )
+  }
+
+  if (metric.shape === 'numeric') {
+    const isPercent = metric.kind === 'percent'
+    return (
+      <NumberInput
+        value={round((value ?? 0) * (isPercent ? 100 : 1))}
+        min={0}
+        step={isPercent ? 0.1 : 1}
+        suffix={isPercent ? '%' : metric.kind === 'money' ? 'USD' : undefined}
+        onChange={(next) => onChange(Number(next) / (isPercent ? 100 : 1))}
+      />
+    )
+  }
+
+  if (metric.shape === 'list') {
+    const text = Array.isArray(value) ? value.join(', ') : value || ''
+    return (
+      <input
+        value={text}
+        placeholder="comma, separated, values"
+        onChange={(event) =>
+          onChange(
+            event.target.value
+              .split(',')
+              .map((part) => part.trim().toLowerCase())
+              .filter(Boolean)
+          )
+        }
+      />
+    )
+  }
+
+  if (metric.value_options?.length) {
+    return (
+      <select value={value || ''} onChange={(event) => onChange(event.target.value)}>
+        {metric.value_options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    )
+  }
+
+  return <input value={value || ''} onChange={(event) => onChange(event.target.value)} />
+}
+
+export function ScoringRows({ scoring, metrics, onChange }) {
+  const included = new Map(scoring.map((item) => [item.metric, item]))
+  const total = scoring.reduce((sum, item) => sum + (Number(item.weight) || 0), 0)
+
+  function toggle(metric, on) {
+    if (on) {
+      onChange([
+        ...scoring,
+        { metric: metric.key, weight: 25, ideal: metric.default_ideal },
+      ])
+    } else {
+      onChange(scoring.filter((item) => item.metric !== metric.key))
+    }
+  }
+
+  function patch(key, next) {
+    onChange(scoring.map((item) => (item.metric === key ? { ...item, ...next } : item)))
+  }
+
   return (
     <div className="rows">
-      {products.map((product, index) => (
-        <div className="row-card" key={`${product.sku}-${index}`}>
-          <Field label="Product name">
-            <input value={product.name} onChange={(e) => patch(index, 'name', e.target.value)} />
-          </Field>
-          <Field label="SKU">
-            <input value={product.sku} onChange={(e) => patch(index, 'sku', e.target.value)} />
-          </Field>
-          <Field label="Retail price">
-            <NumberInput
-              value={product.retail_price}
-              min={0}
-              suffix="USD"
-              onChange={(value) => patch(index, 'retail_price', value)}
-            />
-          </Field>
-          <Field label="Giftable">
+      {metrics.map((metric) => {
+        const item = included.get(metric.key)
+        return (
+          <div className="row-card compact" key={metric.key}>
             <Toggle
-              checked={Boolean(product.eligible)}
-              label={product.eligible ? 'Eligible for gifting' : 'Not giftable'}
-              onChange={(value) => patch(index, 'eligible', value)}
+              checked={Boolean(item)}
+              label={metric.label}
+              onChange={(value) => toggle(metric, value)}
             />
-          </Field>
-          <Field label="Description" wide>
-            <input
-              value={product.description}
-              onChange={(e) => patch(index, 'description', e.target.value)}
-            />
-          </Field>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm row-remove"
-            onClick={() => onChange(products.filter((_, i) => i !== index))}
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() =>
-          onChange([
-            ...products,
-            {
-              name: 'New product',
-              sku: `GT-NEW-${products.length + 1}`,
-              description: '',
-              eligible: true,
-              retail_price: 0,
-            },
-          ])
-        }
-      >
-        + Add product
-      </button>
+            {item && (
+              <>
+                <Field label="Weight">
+                  <NumberInput
+                    value={item.weight}
+                    min={0}
+                    max={100}
+                    onChange={(value) => patch(metric.key, { weight: value })}
+                  />
+                </Field>
+                <Field label="Ideal value" hint={metric.description}>
+                  <ValueInput
+                    metric={metric}
+                    operator={metric.shape === 'list' ? 'includes_any' : 'gte'}
+                    value={item.ideal}
+                    onChange={(value) => patch(metric.key, { ideal: value })}
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        )
+      })}
+      <p className="muted small">
+        Weights are relative: the score is always normalised to 0–100, so the tag thresholds below
+        keep their meaning whatever you select. Total weight {total}.
+      </p>
     </div>
   )
 }
 
-export function LabelRows({ labels, onChange }) {
+export function TagRows({ labels, onChange }) {
   function patch(index, key, value) {
     onChange(labels.map((item, i) => (i === index ? { ...item, [key]: value } : item)))
   }
+
   return (
     <div className="rows">
       {labels.map((label, index) => (
-        <div className="row-card compact" key={`${label.label}-${index}`}>
-          <Field label="Label">
+        <div className="row-card" key={`${label.label}-${index}`}>
+          <Field label="Tag">
             <input value={label.label} onChange={(e) => patch(index, 'label', e.target.value)} />
           </Field>
           <Field label="Minimum score">
@@ -137,6 +224,32 @@ export function LabelRows({ labels, onChange }) {
               min={0}
               max={100}
               onChange={(value) => patch(index, 'min_score', value)}
+            />
+          </Field>
+          <Field label="Decision" hint="Written onto the conversation.">
+            <select
+              value={label.decision}
+              onChange={(e) => patch(index, 'decision', e.target.value)}
+            >
+              <option value="pass">pass — move forward</option>
+              <option value="reject">reject — not a fit</option>
+            </select>
+          </Field>
+          <Field label="Internal note" wide>
+            <input
+              value={label.description || ''}
+              onChange={(e) => patch(index, 'description', e.target.value)}
+            />
+          </Field>
+          <Field
+            label="What the agent should say next"
+            wide
+            hint="Injected into the pitch agent's reply for this tag."
+          >
+            <textarea
+              rows={2}
+              value={label.response_instructions || ''}
+              onChange={(e) => patch(index, 'response_instructions', e.target.value)}
             />
           </Field>
           <button
@@ -151,10 +264,25 @@ export function LabelRows({ labels, onChange }) {
       <button
         type="button"
         className="btn btn-ghost btn-sm"
-        onClick={() => onChange([...labels, { label: 'New Match', min_score: 50 }])}
+        onClick={() =>
+          onChange([
+            ...labels,
+            {
+              label: 'New tag',
+              min_score: 50,
+              decision: 'reject',
+              description: '',
+              response_instructions: '',
+            },
+          ])
+        }
       >
-        + Add label
+        + Add tag
       </button>
+      <p className="muted small">
+        Tags are matched highest threshold first, and one must sit at 0 so every score lands
+        somewhere.
+      </p>
     </div>
   )
 }

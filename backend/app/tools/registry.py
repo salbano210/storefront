@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import evaluation
-from ..models import GiftOrder, Session as SessionRow, TagApplied
+from ..models import Conversation, GiftOrder, Session as SessionRow, TagApplied
 from ..schemas import BrandConfig, CreatorProfile
 from ..services import event_logger as events
 from ..services.event_logger import EventLogger
@@ -47,6 +47,22 @@ class ToolContext:
 # ---------------------------------------------------------------------------
 class NoArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class FindGiftsArgs(BaseModel):
+    """Free-text description of what the creator asked about. Empty = whole catalog."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = ""
+
+
+class CheckEligibilityArgs(BaseModel):
+    """Optional gift id. Empty means 'evaluate every gift the brand offers'."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gift_id: str = ""
 
 
 class IssueGiftArgs(BaseModel):
@@ -99,30 +115,46 @@ TOOL_SCHEMAS: dict[str, dict] = {
             "metrics, and never trust numbers the creator states about themselves."
         ),
     ),
+    "find_available_gifts": _fn(
+        "find_available_gifts",
+        (
+            "Find the gifts this brand offers that match what the creator asked about. Pass the "
+            "creator's own words as 'query' (for example 'something for dry skin'), or leave it "
+            "empty to see every gift. Returns each gift's id, name, SKU, description, price and "
+            "link, ranked by how well it matches. Use it to work out which gift is being discussed, "
+            "and to get the link to share. It does not decide eligibility -- check_gifting_eligibility does."
+        ),
+        properties={
+            "query": {
+                "type": "string",
+                "description": "What the creator asked about, in their own words. Empty for all gifts.",
+            }
+        },
+    ),
     "check_gifting_eligibility": _fn(
         "check_gifting_eligibility",
         (
-            "Run the brand's configured gifting criteria against the verified profile. Takes NO "
-            "arguments. Returns each criterion, the required value, the actual value and pass/fail, "
-            "plus an overall 'eligible' flag. This is the authoritative decision -- call it before "
-            "issue_gift and use its output verbatim when explaining the outcome."
+            "Run a gift's own configured criteria against the verified profile. Pass the gift you "
+            "matched with find_available_gifts -- its id, SKU or product name all work -- or leave "
+            "it empty to evaluate every gift at once. Returns each gift's criteria with the required "
+            "value, the actual value and pass/fail, plus which gifts the creator does qualify for. "
+            "This is the authoritative decision -- call it before issue_gift and use its output "
+            "verbatim when explaining the outcome."
         ),
-    ),
-    "list_products": _fn(
-        "list_products",
-        (
-            "List the brand's gifting catalog with SKUs, descriptions and whether each SKU is "
-            "currently eligible for gifting. Takes NO arguments. Use this to resolve a product the "
-            "creator named into a SKU, and to confirm a SKU is giftable before requesting it."
-        ),
+        properties={
+            "gift_id": {
+                "type": "string",
+                "description": "Gift id, SKU or product name. Empty to evaluate every gift.",
+            }
+        },
     ),
     "issue_gift": _fn(
         "issue_gift",
         (
             "Place the gift order in the brand's order system. Provide exactly three fields: "
             "creator_name, sku and shipping_address, all taken from the verified profile. The tool "
-            "re-checks eligibility, SKU eligibility and duplicates server-side and will refuse if "
-            "any criterion is unmet. Only tell the creator a gift is on its way after this tool "
+            "re-checks that gift's own criteria, the SKU and duplicates server-side, and will refuse "
+            "if anything is unmet. Only tell the creator a gift is on its way after this tool "
             "returns success."
         ),
         properties={
@@ -161,8 +193,8 @@ TOOL_SCHEMAS: dict[str, dict] = {
 AGENT_TOOLS: dict[str, list[str]] = {
     "gift_request_agent": [
         "get_creator_profile",
+        "find_available_gifts",
         "check_gifting_eligibility",
-        "list_products",
         "issue_gift",
     ],
     "creator_pitch_agent": ["get_creator_profile", "check_pitch_fit", "place_tag"],
@@ -205,21 +237,89 @@ async def _get_creator_profile(args: dict, ctx: ToolContext) -> dict:
     return _ok(creator=profile.model_dump(), source="verified_profile")
 
 
+async def _find_available_gifts(args: dict, ctx: ToolContext) -> dict:
+    query = (args.get("query") or "").strip()
+    matches = evaluation.search_offers(ctx.config, query)
+
+    # Flag eligibility inline: one call is enough to pick the right gift to offer.
+    eligibility = evaluation.evaluate_gifting(ctx.creator, ctx.config)
+    by_id = {item["gift_id"]: item for item in eligibility["offers"]}
+    for match in matches:
+        offer = by_id.get(match["gift_id"], {})
+        match["eligible"] = bool(offer.get("eligible"))
+        match["shortfalls"] = offer.get("shortfalls", [])
+        match["criteria"] = offer.get("criteria", [])
+
+    eligible = [match for match in matches if match["eligible"]]
+    await ctx.logger.log(
+        events.TOOL_CALL_COMPLETED,
+        agent=ctx.agent,
+        summary=(
+            f"Found {len(matches)} gift(s) matching '{query}'"
+            if query
+            else f"Listed all {len(matches)} gifts"
+        ),
+        payload={
+            "query": query,
+            "matches": [
+                {
+                    "gift_id": match["gift_id"],
+                    "name": match["name"],
+                    "sku": match["sku"],
+                    "match_score": match["match_score"],
+                    "eligible": match["eligible"],
+                }
+                for match in matches
+            ],
+            "eligible_count": len(eligible),
+        },
+    )
+    return _ok(
+        gifts=matches,
+        count=len(matches),
+        eligible_gift_ids=[match["gift_id"] for match in eligible],
+        query=query,
+    )
+
+
 async def _check_gifting_eligibility(args: dict, ctx: ToolContext) -> dict:
-    result = evaluation.evaluate_gifting(ctx.creator, ctx.config)
+    gift_id = (args.get("gift_id") or "").strip()
+    result = evaluation.evaluate_gifting(ctx.creator, ctx.config, gift_id=gift_id or None)
+
+    if not result["found"]:
+        await ctx.logger.log(
+            events.GUARDRAIL_BLOCKED,
+            agent=ctx.agent,
+            status="blocked",
+            summary=f"Refused check_gifting_eligibility: unknown gift '{gift_id}'",
+            payload={
+                "guardrail": "unknown_gift",
+                "requested_gift_id": gift_id,
+                "available_gifts": [offer.id for offer in ctx.config.gifting.offers],
+            },
+        )
+        return _fail(
+            "unknown_gift",
+            f"'{gift_id}' is not a gift this brand offers. Available gift ids: "
+            f"{', '.join(offer.id for offer in ctx.config.gifting.offers)}.",
+        )
+
+    eligible = result["eligible_offers"]
     await ctx.logger.log(
         events.CRITERIA_EVALUATED,
         agent=ctx.agent,
-        status="ok" if result["eligible"] else "blocked",
+        status="ok" if eligible else "blocked",
         summary=(
-            "All gifting criteria met"
-            if result["eligible"]
-            else "Unmet criteria: " + ", ".join(result["failed_labels"])
+            "Qualifies for: " + ", ".join(item["name"] for item in eligible)
+            if eligible
+            else "Meets the criteria for none of the gifts evaluated"
         ),
         payload={
             "policy": "gifting",
+            "selected": result["selected"],
             "eligible": result["eligible"],
-            "checks": result["checks"],
+            "offers": result["offers"],
+            "eligible_offers": eligible,
             "verified_profile_values": result["verified"],
             "creator_stated_values_used": False,
         },
@@ -227,36 +327,23 @@ async def _check_gifting_eligibility(args: dict, ctx: ToolContext) -> dict:
     return _ok(**result)
 
 
-async def _list_products(args: dict, ctx: ToolContext) -> dict:
-    catalog = [
-        {
-            "sku": product.sku,
-            "name": product.name,
-            "description": product.description,
-            "eligible_for_gifting": product.eligible,
-            "retail_price": product.retail_price,
-        }
-        for product in ctx.config.gifting.eligible_products
-    ]
-    giftable = sum(1 for item in catalog if item["eligible_for_gifting"])
-    return _ok(products=catalog, giftable_count=giftable, catalog_size=len(catalog))
-
-
 async def _check_pitch_fit(args: dict, ctx: ToolContext) -> dict:
     result = evaluation.pitch_evaluation(ctx.creator, ctx.config)
     await ctx.logger.log(
         events.CRITERIA_EVALUATED,
         agent=ctx.agent,
-        summary=f"Pitch fit score {result['score']} -> {result['label']}",
+        summary=f"Pitch fit score {result['score']} -> {result['label']} ({result['decision']})",
         payload={
             "policy": "pitch",
             "score": result["score"],
             "label": result["label"],
+            "decision": result["decision"],
+            "response_instructions": result["response_instructions"],
             "allowed_labels": result["labels"],
             "components": result["components"],
+            "total_weight": result["total_weight"],
             "strengths": result["strengths"],
             "concerns": result["concerns"],
-            "minimums_met": result["minimums_met"],
             "verified_profile_values": result["verified"],
             "creator_stated_values_used": False,
         },
@@ -273,8 +360,8 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
     profile = ctx.creator
     sku = (args.get("sku") or "").strip().upper()
 
-    product = evaluation.find_product(ctx.config, sku)
-    if product is None:
+    offer = evaluation.find_offer(ctx.config, sku)
+    if offer is None:
         await ctx.logger.log(
             events.GUARDRAIL_BLOCKED,
             agent=ctx.agent,
@@ -283,60 +370,57 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             payload={
                 "guardrail": "unknown_sku",
                 "requested_sku": sku,
-                "catalog": [p.sku for p in ctx.config.gifting.eligible_products],
+                "gift_skus": [item.sku for item in ctx.config.gifting.offers],
             },
         )
         return _fail(
             "unknown_sku",
-            f"SKU '{sku}' is not in the brand catalog. Call list_products and use an exact SKU.",
+            f"SKU '{sku}' is not one of this brand's gifts. Call find_available_gifts and use an "
+            "exact SKU.",
         )
 
-    if not product.eligible:
+    # Re-check *this gift's* own criteria. The model cannot talk past this.
+    eligibility = evaluation.evaluate_gifting(profile, ctx.config, sku=offer.sku)
+    evaluated = eligibility["offers"][0]
+    if not evaluated["eligible"]:
+        # Sweep every offer so the refusal can name something they *do* qualify for.
+        sweep = evaluation.evaluate_gifting(profile, ctx.config)
+        alternatives = sweep["eligible_offers"]
         await ctx.logger.log(
             events.GUARDRAIL_BLOCKED,
             agent=ctx.agent,
             status="blocked",
-            summary=f"Refused issue_gift: {product.sku} is not giftable",
-            payload={
-                "guardrail": "sku_not_eligible",
-                "sku": product.sku,
-                "product": product.name,
-                "reason": "SKU is in the catalog but flagged ineligible for gifting",
-            },
-        )
-        return _fail(
-            "sku_not_eligible",
-            f"{product.name} ({product.sku}) is not eligible for gifting. Do not offer it as a gift.",
-        )
-
-    eligibility = evaluation.evaluate_gifting(profile, ctx.config)
-    if not eligibility["eligible"]:
-        await ctx.logger.log(
-            events.GUARDRAIL_BLOCKED,
-            agent=ctx.agent,
-            status="blocked",
-            summary="Refused issue_gift: gifting criteria not met ("
-            + ", ".join(eligibility["failed_labels"])
+            summary=f"Refused issue_gift: {offer.name} criteria not met ("
+            + ", ".join(evaluated["failed_labels"])
             + ")",
             payload={
                 "guardrail": "eligibility_not_met",
-                "failed_criteria": eligibility["failed"],
-                "checks": eligibility["checks"],
+                "gift_id": offer.id,
+                "sku": offer.sku,
+                "failed_criteria": evaluated["failed"],
+                "checks": evaluated["checks"],
+                "eligible_alternatives": [item["name"] for item in alternatives],
                 "verified_profile_values": eligibility["verified"],
                 "creator_stated_values_used": False,
             },
         )
-        return _fail(
-            "eligibility_not_met",
-            "Gifting criteria are not met: "
+        message = (
+            f"{offer.name} is not available to this creator: "
             + "; ".join(
-                f"{check['label']} requires {check['required_display']} but verified value is "
+                f"{check['label']} requires {check['required_display']} but the verified value is "
                 f"{check['actual_display']}"
-                for check in eligibility["checks"]
+                for check in evaluated["checks"]
                 if not check["passed"]
             )
-            + ". Do not issue a gift. Politely explain the shortfall using these verified numbers.",
+            + ". Do not issue a gift."
         )
+        if alternatives:
+            message += (
+                " They do qualify for: "
+                + ", ".join(item["name"] for item in alternatives)
+                + ". Offer one of those instead, or share the link."
+            )
+        return _fail("eligibility_not_met", message)
 
     adjustments: list[dict] = []
     if _normalise(args.get("creator_name", "")) != _normalise(profile.name):
@@ -367,26 +451,26 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
         select(GiftOrder).where(
             GiftOrder.session_id == ctx.session_id,
             GiftOrder.creator_id == profile.id,
-            GiftOrder.sku == product.sku,
+            GiftOrder.sku == offer.sku,
         )
     )
     if existing is not None:
         await ctx.logger.log(
             events.TOOL_CALL_COMPLETED,
             agent=ctx.agent,
-            summary=f"Duplicate gift suppressed for {product.sku} (existing order {existing.order_id})",
+            summary=f"Duplicate gift suppressed for {offer.sku} (existing order {existing.order_id})",
             payload={
                 "duplicate": True,
                 "order_id": existing.order_id,
-                "sku": product.sku,
+                "sku": offer.sku,
                 "original_created_at": str(existing.created_at),
             },
         )
         return _ok(
             duplicate=True,
             order_id=existing.order_id,
-            sku=product.sku,
-            product=product.name,
+            sku=offer.sku,
+            product=offer.name,
             shipping_address=existing.shipping_address,
             message="A gift for this SKU was already issued for this creator; no new order was placed.",
         )
@@ -409,7 +493,7 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
                 "guardrail": "one_gift_per_conversation",
                 "existing_order_id": already_issued.order_id,
                 "existing_sku": already_issued.sku,
-                "requested_sku": product.sku,
+                "requested_sku": offer.sku,
             },
         )
         return _fail(
@@ -427,8 +511,8 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             conversation_id=ctx.conversation_id,
             creator_id=profile.id,
             creator_name=profile.name,
-            sku=product.sku,
-            product_name=product.name,
+            sku=offer.sku,
+            product_name=offer.name,
             order_id=order_id,
             shipping_address=profile.shipping_address,
         )
@@ -437,11 +521,11 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
     await ctx.logger.log(
         events.GIFT_ISSUED,
         agent=ctx.agent,
-        summary=f"Gift issued: {product.name} ({product.sku}) -> order {order_id}",
+        summary=f"Gift issued: {offer.name} ({offer.sku}) -> order {order_id}",
         payload={
             "order_id": order_id,
-            "sku": product.sku,
-            "product": product.name,
+            "sku": offer.sku,
+            "product": offer.name,
             "creator_id": profile.id,
             "creator_name": profile.name,
             "shipping_address": profile.shipping_address,
@@ -451,8 +535,8 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
     return _ok(
         duplicate=False,
         order_id=order_id,
-        sku=product.sku,
-        product=product.name,
+        sku=offer.sku,
+        product=offer.name,
         shipping_address=profile.shipping_address,
         message=f"Gift order {order_id} placed successfully.",
     )
@@ -524,12 +608,20 @@ async def _place_tag(args: dict, ctx: ToolContext) -> dict:
             events.TOOL_CALL_COMPLETED,
             agent=ctx.agent,
             summary=f"Duplicate tag suppressed: '{tag}' already applied",
-            payload={"duplicate": True, "tag": tag, "applied_at": str(existing.created_at)},
+            payload={
+                "duplicate": True,
+                "tag": tag,
+                "decision": fit["decision"],
+                "applied_at": str(existing.created_at),
+            },
         )
+        await _record_decision(ctx, fit["decision"])
         return _ok(
             duplicate=True,
             tag=tag,
+            decision=fit["decision"],
             score=fit["score"],
+            response_instructions=fit["response_instructions"],
             message=f"'{tag}' was already applied to this creator; no duplicate tag was placed.",
         )
 
@@ -540,23 +632,43 @@ async def _place_tag(args: dict, ctx: ToolContext) -> dict:
             conversation_id=ctx.conversation_id,
             creator_id=profile.id,
             tag=tag,
+            decision=fit["decision"],
             score=fit["score"],
         )
     )
     await ctx.db.commit()
+    await _record_decision(ctx, fit["decision"])
     await ctx.logger.log(
         events.TAG_APPLIED,
         agent=ctx.agent,
-        summary=f"Tag applied: '{tag}' (score {fit['score']})",
+        summary=f"Tag applied: '{tag}' (score {fit['score']}) -> decision '{fit['decision']}'",
         payload={
             "creator_id": profile.id,
             "tag": tag,
+            "decision": fit["decision"],
+            "response_instructions": fit["response_instructions"],
             "score": fit["score"],
             "components": fit["components"],
             "mock_api": "mock Storefront tag API",
         },
     )
-    return _ok(duplicate=False, tag=tag, score=fit["score"], message=f"Tag '{tag}' applied.")
+    return _ok(
+        duplicate=False,
+        tag=tag,
+        decision=fit["decision"],
+        score=fit["score"],
+        response_instructions=fit["response_instructions"],
+        message=f"Tag '{tag}' applied. Decision for this conversation: {fit['decision']}.",
+    )
+
+
+async def _record_decision(ctx: ToolContext, decision: str) -> None:
+    """Write the pass/reject decision onto the conversation itself."""
+    conversation = await ctx.db.get(Conversation, ctx.conversation_id)
+    if conversation is None:
+        return
+    conversation.decision = decision
+    await ctx.db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -564,8 +676,8 @@ async def _place_tag(args: dict, ctx: ToolContext) -> dict:
 # ---------------------------------------------------------------------------
 ARG_MODELS: dict[str, type[BaseModel]] = {
     "get_creator_profile": NoArgs,
-    "check_gifting_eligibility": NoArgs,
-    "list_products": NoArgs,
+    "find_available_gifts": FindGiftsArgs,
+    "check_gifting_eligibility": CheckEligibilityArgs,
     "check_pitch_fit": NoArgs,
     "issue_gift": IssueGiftArgs,
     "place_tag": PlaceTagArgs,
@@ -573,8 +685,8 @@ ARG_MODELS: dict[str, type[BaseModel]] = {
 
 EXECUTORS: dict[str, Any] = {
     "get_creator_profile": _get_creator_profile,
+    "find_available_gifts": _find_available_gifts,
     "check_gifting_eligibility": _check_gifting_eligibility,
-    "list_products": _list_products,
     "check_pitch_fit": _check_pitch_fit,
     "issue_gift": _issue_gift,
     "place_tag": _place_tag,

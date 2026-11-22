@@ -68,9 +68,9 @@ INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
 PROMPT_LEAK_MARKERS: tuple[str, ...] = (
     "hard rules",
     "workflow (follow it in order)",
-    "gifting catalog (sku",
-    "configured gifting criteria",
-    "configured pitch criteria",
+    "gift offers (sku",
+    "pitch scoring (the metrics",
+    "classification tags (tag",
     "brand admin instructions",
     "brand admin constraints",
     "creator in this conversation (id, verified)",
@@ -158,20 +158,36 @@ def truthful_gift_reply(records: Sequence[Any], *, eligibility: dict[str, Any] |
     """A truthful gifting reply built from what the tools actually returned.
 
     ``eligibility`` is the deterministic evaluation the orchestrator computes, used
-    when the model never called ``check_gifting_eligibility`` at all.
+    when the model never called ``check_gifting_eligibility`` at all. Because gifts
+    now carry their own criteria, the reply names the gift they *do* qualify for
+    whenever there is one.
     """
     result = _last_ok(records, "check_gifting_eligibility") or eligibility
     if result and not result.get("eligible", True):
-        failed = [check for check in result.get("checks", []) if not check.get("passed")]
-        detail = "; ".join(
-            f"{check['label']}: {check['actual_display']} (needs {check['required_display']})"
-            for check in failed
-        )
-        return (
+        offers = result.get("offers") or []
+        alternatives = result.get("eligible_offers") or [
+            offer for offer in offers if offer.get("eligible")
+        ]
+        if alternatives:
+            best = alternatives[0]
+            return (
+                "Thanks for reaching out. I'm not able to send the gift you asked about — against "
+                "your verified profile you don't meet its criteria. You do qualify for the "
+                f"{best['name']}"
+                + (f" though, and here's the link: {best['url']}." if best.get("url") else ".")
+            )
+
+        blocked = [offer for offer in offers if not offer.get("eligible")]
+        detail = ""
+        if blocked:
+            detail = "; ".join(blocked[0].get("shortfalls") or [])
+        message = (
             "Thanks for reaching out. I'm not able to approve a gift for you right now — against "
-            f"your verified profile you don't currently meet our gifting criteria ({detail}). "
-            "If those numbers change, we'd be glad to revisit it."
+            "your verified profile you don't currently meet our gifting criteria"
         )
+        if detail:
+            message += f" ({detail})"
+        return message + ". If those numbers change, we'd be glad to revisit it."
 
     attempt = _last(records, "issue_gift")
     if attempt and not attempt.get("ok"):
@@ -184,13 +200,19 @@ def truthful_gift_reply(records: Sequence[Any], *, eligibility: dict[str, Any] |
 
 
 def truthful_pitch_reply(records: Sequence[Any], *, fit: dict[str, Any] | None = None) -> str:
-    """A truthful pitch reply built from the fit evaluation."""
+    """A truthful pitch reply built from the fit evaluation and its decision."""
     result = _last_ok(records, "check_pitch_fit") or fit
     if result:
+        if result.get("decision") == "reject":
+            return (
+                "Thanks for the pitch. Against our verified profile data it isn't a fit right now "
+                "— we'll keep you in mind for future campaigns. Thanks for thinking of us."
+            )
         return (
             f"Thanks for the pitch. Your verified profile scores {result.get('score')}/100 against "
             f'our ideal creator profile, which we classify as "{result.get("label")}". '
-            "The team will follow up if there's a fit."
+            "We'd like to take this further — could you share the deliverables and timeline you "
+            "have in mind?"
         )
     return (
         "Thanks for the pitch. I've reviewed it, but I couldn't complete the classification. "

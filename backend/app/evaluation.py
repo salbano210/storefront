@@ -3,7 +3,10 @@
 This module is deliberately boring and contains no LLM calls. The agents gather
 information and talk to the creator; *these* functions decide. That separation is
 what makes the demo trustworthy: a cheap model can never approve an ineligible
-creator, and lowering a threshold in the admin UI provably changes outcomes.
+creator, and changing a criterion in the admin UI provably changes outcomes.
+
+The conditions themselves live in the verified-metric registry (``metrics.py``).
+This module only applies them: to each gift offer, and to pitch scoring.
 """
 
 from __future__ import annotations
@@ -11,247 +14,236 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .schemas import BrandConfig, CreatorProfile
+from . import metrics
+from .metrics import fmt_int, fmt_money, fmt_pct  # noqa: F401  re-exported
+from .schemas import BrandConfig, CreatorProfile, GiftOffer
 
 
-def fmt_int(value: float | int) -> str:
-    return f"{int(value):,}"
-
-
-def fmt_pct(value: float) -> str:
-    return f"{value * 100:.1f}%"
-
-
-def fmt_money(value: float) -> str:
-    return f"${value:,.0f}"
+def verified_values(creator: CreatorProfile) -> dict[str, Any]:
+    """Every registry metric, read from the verified profile, for the audit log."""
+    return {metric.key: metric.getter(creator) for metric in metrics.METRICS}
 
 
 # ---------------------------------------------------------------------------
-# Gifting eligibility
+# Gifting: one evaluation per gift offer
 # ---------------------------------------------------------------------------
-def evaluate_gifting(creator: CreatorProfile, config: BrandConfig) -> dict[str, Any]:
-    """Compare verified creator data against the configured gifting criteria."""
-    criteria = config.gifting.criteria
-    checks: list[dict[str, Any]] = []
-
-    checks.append(
-        {
-            "criterion": "minimum_followers",
-            "label": "Follower count",
-            "required": criteria.minimum_followers,
-            "required_display": fmt_int(criteria.minimum_followers),
-            "actual": creator.followers,
-            "actual_display": fmt_int(creator.followers),
-            "passed": creator.followers >= criteria.minimum_followers,
-            "source": "verified profile",
-        }
+def evaluate_offer(creator: CreatorProfile, offer: GiftOffer) -> dict[str, Any]:
+    """Apply one gift's *own* criteria to the verified profile."""
+    outcome = metrics.evaluate_rules(
+        [rule.model_dump() for rule in offer.criteria], creator
     )
-    checks.append(
-        {
-            "criterion": "minimum_engagement_rate",
-            "label": "Engagement rate",
-            "required": criteria.minimum_engagement_rate,
-            "required_display": fmt_pct(criteria.minimum_engagement_rate),
-            "actual": creator.engagement_rate,
-            "actual_display": fmt_pct(creator.engagement_rate),
-            "passed": creator.engagement_rate >= criteria.minimum_engagement_rate - 1e-9,
-            "source": "verified profile",
-        }
-    )
-    checks.append(
-        {
-            "criterion": "minimum_brand_revenue",
-            "label": "Brand-attributed revenue",
-            "required": criteria.minimum_brand_revenue,
-            "required_display": fmt_money(criteria.minimum_brand_revenue),
-            "actual": creator.brand_attributed_revenue,
-            "actual_display": fmt_money(creator.brand_attributed_revenue),
-            "passed": creator.brand_attributed_revenue >= criteria.minimum_brand_revenue,
-            "source": "verified profile",
-        }
-    )
-
-    if criteria.required_categories:
-        wanted = {c.lower() for c in criteria.required_categories}
-        actual = {c.lower() for c in creator.categories}
-        checks.append(
-            {
-                "criterion": "required_categories",
-                "label": "Creator category",
-                "required": criteria.required_categories,
-                "required_display": ", ".join(criteria.required_categories),
-                "actual": creator.categories,
-                "actual_display": ", ".join(creator.categories),
-                "passed": bool(wanted & actual),
-                "source": "verified profile",
-            }
-        )
-
-    failed = [check for check in checks if not check["passed"]]
     return {
-        "eligible": not failed,
-        "checks": checks,
-        "failed": [check["criterion"] for check in failed],
-        "failed_labels": [check["label"] for check in failed],
-        "creator_id": creator.id,
-        "verified": {
-            "followers": creator.followers,
-            "engagement_rate": creator.engagement_rate,
-            "brand_attributed_revenue": creator.brand_attributed_revenue,
-            "categories": creator.categories,
-        },
+        "gift_id": offer.id,
+        "name": offer.name,
+        "sku": offer.sku,
+        "url": offer.url,
+        "retail_price": offer.retail_price,
+        "description": offer.description,
+        "tags": list(offer.tags),
+        "criteria": [rule.describe() for rule in offer.criteria],
+        "open_to_all": not offer.criteria,
+        "eligible": outcome["eligible"],
+        "checks": outcome["checks"],
+        "failed": outcome["failed"],
+        "failed_labels": outcome["failed_labels"],
+        "shortfalls": outcome["shortfalls"],
     }
+
+
+def _offer_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "gift_id": item["gift_id"],
+        "name": item["name"],
+        "sku": item["sku"],
+        "url": item["url"],
+        "retail_price": item["retail_price"],
+        "eligible": item["eligible"],
+        "shortfalls": item["shortfalls"],
+    }
+
+
+def evaluate_gifting(
+    creator: CreatorProfile,
+    config: BrandConfig,
+    *,
+    gift_id: str | None = None,
+    sku: str | None = None,
+) -> dict[str, Any]:
+    """Evaluate the brand's gift offers for this creator.
+
+    With no selector every offer is evaluated. With ``gift_id`` or ``sku`` only
+    that offer is -- which is exactly what ``issue_gift`` re-checks before it
+    places an order.
+    """
+    offers = list(config.gifting.offers)
+    selected: str = "all"
+    if gift_id or sku:
+        identifier = gift_id or sku or ""
+        match = config.gifting.resolve(identifier)
+        offers = [match] if match is not None else []
+        # Canonical id, so callers can compare `selected` against gift ids even
+        # when the model passed a SKU or a product name.
+        selected = match.id if match is not None else identifier.strip().lower()
+
+    evaluations = [evaluate_offer(creator, offer) for offer in offers]
+    eligible = [item for item in evaluations if item["eligible"]]
+    ineligible = [item for item in evaluations if not item["eligible"]]
+
+    return {
+        "eligible": bool(eligible),
+        "selected": selected,
+        "found": bool(evaluations),
+        "offers": evaluations,
+        "eligible_offers": [_offer_summary(item) for item in eligible],
+        "ineligible_offers": [_offer_summary(item) for item in ineligible],
+        "failed_labels": list(
+            dict.fromkeys(label for item in ineligible for label in item["failed_labels"])
+        ),
+        "creator_id": creator.id,
+        "verified": verified_values(creator),
+    }
+
+
+def find_offer(config: BrandConfig, sku: str) -> GiftOffer | None:
+    """Resolve an offer by id, SKU or name (see ``GiftingConfig.resolve``)."""
+    return config.gifting.resolve(sku)
+
+
+# ---------------------------------------------------------------------------
+# Gift discovery -- deterministic keyword matching, no embeddings
+# ---------------------------------------------------------------------------
+_STOPWORDS = {
+    "a", "an", "the", "for", "of", "to", "me", "my", "i", "is", "are", "am", "can", "could",
+    "would", "please", "some", "any", "something", "want", "wants", "like", "get", "send",
+    "try", "and", "or", "with", "that", "this", "it", "you", "your", "have", "has", "do",
+    "does", "just", "about", "was", "were", "be", "been", "there", "their", "on", "in", "at",
+    "hi", "hey", "hello", "thanks", "thank", "maybe", "also", "really", "very",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", (text or "").lower())
+        if token and token not in _STOPWORDS
+    }
+
+
+def search_offers(
+    config: BrandConfig, query: str = "", *, limit: int | None = None
+) -> list[dict[str, Any]]:
+    """Rank the brand's gift offers against a free-text query.
+
+    Deterministic on purpose: token overlap across name, description, SKU and the
+    admin's tags. An empty query returns the whole catalog in configured order.
+    """
+    wanted = _tokens(query)
+    ranked: list[tuple[float, int, GiftOffer, list[str]]] = []
+    for index, offer in enumerate(config.gifting.offers):
+        haystack = _tokens(
+            " ".join([offer.name, offer.description, offer.sku, " ".join(offer.tags)])
+        )
+        overlap = wanted & haystack
+        score = round(len(overlap) / len(wanted), 4) if wanted else 0.0
+        if wanted and not overlap:
+            continue
+        ranked.append((score, index, offer, sorted(overlap)))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    if limit is not None:
+        ranked = ranked[:limit]
+    return [
+        {
+            "gift_id": offer.id,
+            "name": offer.name,
+            "sku": offer.sku,
+            "url": offer.url,
+            "description": offer.description,
+            "retail_price": offer.retail_price,
+            "tags": list(offer.tags),
+            "match_score": score,
+            "matched_on": matched,
+        }
+        for score, _index, offer, matched in ranked
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Pitch fit scoring
 # ---------------------------------------------------------------------------
-_AGE_RE = re.compile(r"(\d{1,2})\s*[-\u2013]\s*(\d{1,2})")
-
-
-def _age_range(value: str) -> tuple[int, int] | None:
-    match = _AGE_RE.search(value or "")
-    if not match:
-        return None
-    low, high = int(match.group(1)), int(match.group(2))
-    return (min(low, high), max(low, high))
-
-
-def _age_overlap(preferred: str, actual: str) -> bool:
-    wanted = _age_range(preferred)
-    have = _age_range(actual)
-    if not wanted or not have:
-        return True  # unknown -> do not penalise
-    return not (have[1] < wanted[0] or have[0] > wanted[1])
-
-
 def _ratio(actual: float, ideal: float) -> float:
     if ideal <= 0:
         return 0.0
     return max(0.0, min(1.0, actual / ideal))
 
 
-def _component(key: str, label: str, ratio: float, weight: float, detail: str) -> dict[str, Any]:
-    return {
-        "key": key,
-        "label": label,
-        "ratio": round(ratio, 4),
-        "weight": weight,
-        "points": round(ratio * weight, 2),
-        "detail": detail,
-    }
+def _category_ratio(creator: CreatorProfile, ideal: list[str]) -> tuple[float, str]:
+    preferred = {str(item).lower() for item in ideal}
+    actual = {str(item).lower() for item in creator.categories}
+    overlap = sorted(preferred & actual)
+    if overlap:
+        return 1.0, f"matches {', '.join(overlap)}"
+    return 0.0, f"no overlap with {', '.join(sorted(preferred))}"
 
 
 def pitch_evaluation(creator: CreatorProfile, config: BrandConfig) -> dict[str, Any]:
-    """Score a creator against the brand's ideal profile and pick a label."""
-    criteria = config.pitch.criteria
-    targets = config.pitch.targets
-    weights = config.pitch.weights
+    """Score the creator on the metrics the admin selected, then pick a tag.
 
-    preferred = {c.lower() for c in criteria.preferred_categories}
-    actual_categories = {c.lower() for c in creator.categories}
-    overlap = sorted(preferred & actual_categories)
-    category_ratio = 1.0 if overlap else 0.0
+    The score is always 0-100: component points are divided by the total
+    configured weight, so changing a weight changes the balance between metrics
+    without silently changing what the thresholds mean.
+    """
+    components: list[dict[str, Any]] = []
+    for item in config.pitch.scoring:
+        metric = metrics.get_metric(item.metric)
+        actual = metric.getter(creator)
+        if metric.shape == "list":
+            ratio, detail = _category_ratio(creator, item.ideal)
+        else:
+            ratio = _ratio(float(actual or 0), float(item.ideal))
+            detail = (
+                f"{metrics.fmt_value(metric, actual)} vs ideal "
+                f"{metrics.fmt_value(metric, item.ideal)}"
+            )
+        components.append(
+            {
+                "key": item.metric,
+                "metric": item.metric,
+                "label": metric.label,
+                "ratio": round(ratio, 4),
+                "weight": item.weight,
+                "points": round(ratio * item.weight, 2),
+                "ideal": item.ideal,
+                "ideal_display": metrics.fmt_value(metric, item.ideal),
+                "actual": actual,
+                "actual_display": metrics.fmt_value(metric, actual),
+                "detail": detail,
+            }
+        )
 
-    components = [
-        _component(
-            "category",
-            "Category fit",
-            category_ratio,
-            weights["category"],
-            f"matches {', '.join(overlap)}" if overlap else "no overlap with preferred categories",
-        ),
-        _component(
-            "engagement",
-            "Engagement rate",
-            _ratio(creator.engagement_rate, targets.ideal_engagement_rate),
-            weights["engagement"],
-            f"{fmt_pct(creator.engagement_rate)} vs ideal {fmt_pct(targets.ideal_engagement_rate)}",
-        ),
-        _component(
-            "followers",
-            "Audience size",
-            _ratio(creator.followers, targets.ideal_followers),
-            weights["followers"],
-            f"{fmt_int(creator.followers)} vs ideal {fmt_int(targets.ideal_followers)}",
-        ),
-        _component(
-            "brand_revenue",
-            "Brand-attributed revenue",
-            _ratio(creator.brand_attributed_revenue, targets.ideal_brand_revenue),
-            weights["brand_revenue"],
-            f"{fmt_money(creator.brand_attributed_revenue)} vs ideal {fmt_money(targets.ideal_brand_revenue)}",
-        ),
-        _component(
-            "storefront_sales",
-            "Historical Storefront sales",
-            _ratio(creator.storefront_sales, targets.ideal_storefront_sales),
-            weights["storefront_sales"],
-            f"{fmt_money(creator.storefront_sales)} vs ideal {fmt_money(targets.ideal_storefront_sales)}",
-        ),
-    ]
-
-    score = round(sum(component["points"] for component in components), 2)
-    label = label_for_score(score, config)
+    total_weight = sum(component["weight"] for component in components) or 1.0
+    score = round(sum(component["points"] for component in components) / total_weight * 100, 2)
+    label = config.pitch.label_for_score(score)
 
     strengths = [f"{c['label']}: {c['detail']}" for c in components if c["ratio"] >= 0.8]
     concerns = [f"{c['label']}: {c['detail']}" for c in components if c["ratio"] < 0.4]
 
-    minimum_failures: list[str] = []
-    if creator.followers < criteria.minimum_followers:
-        minimum_failures.append(f"below the {fmt_int(criteria.minimum_followers)} follower minimum")
-    if creator.engagement_rate < criteria.minimum_engagement_rate - 1e-9:
-        minimum_failures.append(
-            f"below the {fmt_pct(criteria.minimum_engagement_rate)} engagement minimum"
-        )
-    if creator.brand_attributed_revenue < criteria.minimum_brand_revenue:
-        minimum_failures.append(
-            f"below the {fmt_money(criteria.minimum_brand_revenue)} revenue minimum"
-        )
-    if not _age_overlap(criteria.preferred_audience_age, creator.primary_age_range):
-        concerns.append(
-            f"Audience age {creator.primary_age_range} sits outside the preferred "
-            f"{criteria.preferred_audience_age}"
-        )
-
     return {
         "score": score,
-        "label": label,
+        "label": label.label,
+        "decision": label.decision,
+        "response_instructions": label.response_instructions,
         "labels": [item.label for item in config.pitch.classification_labels],
         "components": components,
         "strengths": strengths,
-        "concerns": concerns + minimum_failures,
-        "minimums_met": not minimum_failures,
-        "minimum_failures": minimum_failures,
+        "concerns": concerns,
+        "total_weight": total_weight,
         "creator_id": creator.id,
-        "verified": {
-            "followers": creator.followers,
-            "engagement_rate": creator.engagement_rate,
-            "categories": creator.categories,
-            "brand_attributed_revenue": creator.brand_attributed_revenue,
-            "storefront_sales": creator.storefront_sales,
-            "primary_age_range": creator.primary_age_range,
-        },
+        "verified": verified_values(creator),
     }
 
 
 def label_for_score(score: float, config: BrandConfig) -> str:
     """Highest configured label whose threshold the score reaches."""
-    for item in config.pitch.classification_labels:
-        if score >= item.min_score:
-            return item.label
-    return config.pitch.classification_labels[-1].label
-
-
-def find_product(config: BrandConfig, sku: str) -> Any | None:
-    wanted = (sku or "").strip().upper()
-    for product in config.gifting.eligible_products:
-        if product.sku == wanted:
-            return product
-    return None
-
-
-def eligible_product(config: BrandConfig, sku: str) -> Any | None:
-    product = find_product(config, sku)
-    return product if product is not None and product.eligible else None
+    return config.pitch.label_for_score(score).label
 

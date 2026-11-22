@@ -6,78 +6,81 @@
     "tone": "warm, concise, professional, never pushy"
   },
   "gifting": {
-    "criteria": {
-      "minimum_followers": 10000,
-      "minimum_engagement_rate": 0.03,
-      "minimum_brand_revenue": 500,
-      "required_categories": [],
-      "notes": "Gifting is for creators who already drive measurable revenue for the brand. All thresholds are evaluated against verified profile data, never creator-stated numbers."
-    },
-    "eligible_products": [
+    "notes": "Each gift carries its own criteria. There is no brand-level gate: a creator can qualify for some offers and not others, and the agents suggest the best one they do qualify for.",
+    "offers": [
       {
+        "id": "barrier-repair-serum",
         "name": "Barrier Repair Serum",
         "sku": "GT-SERUM-001",
-        "description": "Ceramide + panthenol serum for compromised skin barriers. Hero gifting SKU.",
-        "eligible": true,
-        "retail_price": 68
+        "description": "Ceramide and panthenol overnight serum for dry, reactive, compromised skin barriers. Our hero gifting SKU.",
+        "url": "https://summersoft.example/products/barrier-repair-serum",
+        "retail_price": 68,
+        "tags": ["serum", "dry skin", "barrier", "repair", "overnight", "hydration", "sensitive"],
+        "criteria": [
+          { "metric": "followers", "operator": "gte", "value": 50000 },
+          { "metric": "engagement_rate", "operator": "gte", "value": 0.03 },
+          { "metric": "brand_attributed_revenue", "operator": "gte", "value": 5000 }
+        ]
       },
       {
+        "id": "hydrating-cleanser",
         "name": "Hydrating Cleanser",
         "sku": "GT-CLEANSER-002",
-        "description": "Non-stripping gel cleanser with glycerin and oat. High-volume gifting SKU.",
-        "eligible": true,
-        "retail_price": 34
+        "description": "Non-stripping gel cleanser with glycerin and oat, for daily use on sensitive skin.",
+        "url": "https://summersoft.example/products/hydrating-cleanser",
+        "retail_price": 34,
+        "tags": ["cleanser", "gentle", "hydrating", "daily", "sensitive", "wash"],
+        "criteria": [
+          { "metric": "followers", "operator": "gte", "value": 10000 },
+          { "metric": "engagement_rate", "operator": "gte", "value": 0.025 }
+        ]
       },
       {
-        "name": "Overnight Recovery Mask",
-        "sku": "GT-MASK-003",
-        "description": "Leave-on overnight mask with squalane and peptides.",
-        "eligible": true,
-        "retail_price": 52
-      },
-      {
-        "name": "Vitamin C Brightening Drops",
-        "sku": "GT-DROPS-004",
-        "description": "15% THD ascorbate brightening drops. Launch SKU for spring campaigns.",
-        "eligible": true,
-        "retail_price": 74
-      },
-      {
-        "name": "Limited Edition Holiday Kit",
-        "sku": "GT-KIT-099",
-        "description": "Seasonal three-piece set. Inventory reserved for paid campaigns only -- not giftable.",
-        "eligible": false,
-        "retail_price": 145
+        "id": "discovery-set",
+        "name": "Discovery Set",
+        "sku": "GT-SET-003",
+        "description": "A three-piece starter set of our bestsellers, for creators new to the brand.",
+        "url": "https://summersoft.example/products/discovery-set",
+        "retail_price": 24,
+        "tags": ["set", "discovery", "starter", "trial", "sample", "travel"],
+        "criteria": [
+          { "metric": "followers", "operator": "gte", "value": 2000 },
+          { "metric": "categories", "operator": "includes_any", "value": ["beauty", "skincare"] }
+        ]
       }
     ]
   },
   "pitch": {
-    "criteria": {
-      "preferred_categories": ["beauty", "skincare"],
-      "minimum_engagement_rate": 0.025,
-      "minimum_followers": 5000,
-      "minimum_brand_revenue": 0,
-      "preferred_audience_age": "22-35"
-    },
-    "classification_labels": [
-      { "label": "Excellent Match", "min_score": 80 },
-      { "label": "Good Match", "min_score": 60 },
-      { "label": "Moderate Match", "min_score": 40 },
-      { "label": "Poor Match", "min_score": 0 }
+    "notes": "The admin chooses which verified metrics score a pitch. Weights are relative; the score is always normalised to 0-100 so the tag thresholds mean the same thing.",
+    "scoring": [
+      { "metric": "engagement_rate", "weight": 30, "ideal": 0.05 },
+      { "metric": "followers", "weight": 25, "ideal": 50000 },
+      { "metric": "categories", "weight": 25, "ideal": ["beauty", "skincare"] },
+      { "metric": "brand_attributed_revenue", "weight": 20, "ideal": 10000 }
     ],
-    "targets": {
-      "ideal_followers": 50000,
-      "ideal_engagement_rate": 0.05,
-      "ideal_brand_revenue": 10000,
-      "ideal_storefront_sales": 25000
-    },
-    "weights": {
-      "category": 30,
-      "engagement": 25,
-      "followers": 20,
-      "brand_revenue": 15,
-      "storefront_sales": 10
-    }
+    "classification_labels": [
+      {
+        "label": "Excellent Match",
+        "min_score": 80,
+        "decision": "pass",
+        "description": "Strong on nearly every metric we score.",
+        "response_instructions": "Ask for the specific deliverables, timeline and usage rights you still need before moving to a brief, and say the team will pick it up from here."
+      },
+      {
+        "label": "Promising",
+        "min_score": 55,
+        "decision": "pass",
+        "description": "Worth exploring, with clear gaps to fill.",
+        "response_instructions": "Ask which formats they would propose and what their rates are, and which audience data they can share. Say you will review it with the team."
+      },
+      {
+        "label": "Not a fit",
+        "min_score": 0,
+        "decision": "reject",
+        "description": "Below the bar on the metrics we score.",
+        "response_instructions": "Say it is not a fit right now, that you will keep them in mind for future campaigns, and thank them for reaching out. Do not ask for more detail."
+      }
+    ]
   },
   "agents": {
     "router": {
@@ -85,15 +88,15 @@
       "constraints": "Never approve gifts and never commit to a partnership -- you only classify and hand off."
     },
     "gift_request": {
-      "instructions": "Confirm the exact product with the creator before issuing anything. Always look up the verified profile before discussing eligibility.",
-      "constraints": "Never promise a gift before issue_gift returns success. Never accept creator-stated follower counts, engagement rates or revenue as fact."
+      "instructions": "Find the gift that matches what the creator asked about before discussing eligibility, and offer the best gift they actually qualify for. When they ask about something they do not qualify to be gifted, you may still share the product link so they can buy it.",
+      "constraints": "Never promise a gift before issue_gift returns success, and never imply a linked product is free. Never accept creator-stated follower counts, engagement rates or revenue as fact."
     },
     "creator_pitch": {
-      "instructions": "Acknowledge the pitch warmly, evaluate it against the brand profile, then apply exactly one tag from the configured label set.",
+      "instructions": "Acknowledge the pitch warmly, evaluate it against the brand profile, apply exactly one tag from the configured label set, then follow that tag's response instructions for your reply.",
       "constraints": "Only apply the label returned by check_pitch_fit. Never commit to a paid campaign, rate or deliverable."
     },
     "general_inquiry": {
-      "instructions": "Answer from the brand description and the product catalog. Offer to help with a gifting request or a partnership pitch.",
+      "instructions": "Answer from the brand description and the gift catalog. Offer to help with a gifting request or a partnership pitch.",
       "constraints": "Never approve gifts, never commit to partnerships, never quote unpublished terms."
     }
   },

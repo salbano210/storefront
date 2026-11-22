@@ -8,7 +8,7 @@ without anyone touching orchestration code.
 
 from __future__ import annotations
 
-from ..evaluation import fmt_int, fmt_money, fmt_pct
+from .. import metrics
 from ..schemas import BrandConfig, CreatorProfile
 
 ROUTER_SCHEMA = {
@@ -69,42 +69,39 @@ def _brand_block(config: BrandConfig) -> str:
     )
 
 
-def _catalog_block(config: BrandConfig) -> str:
-    lines = ["GIFTING CATALOG (SKU | product | giftable):"]
-    for product in config.gifting.eligible_products:
-        flag = "giftable" if product.eligible else "NOT giftable"
+def _gift_block(config: BrandConfig) -> str:
+    lines = ["GIFT OFFERS (SKU | product | price | link | criteria):"]
+    for offer in config.gifting.offers:
+        if offer.criteria:
+            criteria = "; ".join(rule.describe() for rule in offer.criteria)
+        else:
+            criteria = "no criteria -- open to every creator"
         lines.append(
-            f"- {product.sku} | {product.name} | {flag} | ${product.retail_price:.0f} | {product.description}"
+            f"- {offer.sku} | {offer.name} | ${offer.retail_price:.0f} | "
+            f"{offer.url or 'no link on file'} | {criteria}"
         )
+    lines.append(
+        "Every offer carries its own criteria, so a creator can qualify for some and not "
+        "others. This list is reference only: check_gifting_eligibility is authoritative."
+    )
     return "\n".join(lines)
 
 
-def _criteria_block(config: BrandConfig) -> str:
-    criteria = config.gifting.criteria
-    parts = [
-        "CONFIGURED GIFTING CRITERIA (reference only -- the tool is authoritative):",
-        f"- minimum followers: {fmt_int(criteria.minimum_followers)}",
-        f"- minimum engagement rate: {fmt_pct(criteria.minimum_engagement_rate)}",
-        f"- minimum brand-attributed revenue: {fmt_money(criteria.minimum_brand_revenue)}",
-    ]
-    if criteria.required_categories:
-        parts.append(f"- required categories: {', '.join(criteria.required_categories)}")
-    if criteria.notes:
-        parts.append(f"- brand notes: {criteria.notes}")
-    return "\n".join(parts)
-
-
 def _pitch_block(config: BrandConfig) -> str:
-    criteria = config.pitch.criteria
-    labels = ", ".join(item.label for item in config.pitch.classification_labels)
-    parts = [
-        "CONFIGURED PITCH CRITERIA (reference only -- the tool is authoritative):",
-        f"- preferred categories: {', '.join(criteria.preferred_categories)}",
-        f"- minimum engagement rate: {fmt_pct(criteria.minimum_engagement_rate)}",
-        f"- preferred audience age: {criteria.preferred_audience_age}",
-        f"- allowed classification labels: {labels}",
-    ]
-    return "\n".join(parts)
+    lines = ["PITCH SCORING (the metrics this brand scores pitches on):"]
+    for item in config.pitch.scoring:
+        metric = metrics.get_metric(item.metric)
+        lines.append(
+            f"- {metric.label}: weight {item.weight:g}, ideal "
+            f"{metrics.fmt_value(metric, item.ideal)}"
+        )
+    lines.append("CLASSIFICATION TAGS (tag | minimum score | decision | how to follow up):")
+    for label in config.pitch.classification_labels:
+        lines.append(
+            f'- "{label.label}" | {label.min_score:g}+ | {label.decision} | '
+            f"{label.response_instructions or 'no instruction on file'}"
+        )
+    return "\n".join(lines)
 
 
 def _profile_block(creator: CreatorProfile) -> str:
@@ -163,31 +160,37 @@ Return JSON only."""
 GIFT_PROMPT = """You are the gifting agent for {brand_name}. You decide gifting requests and place gift orders.
 
 WORKFLOW (follow it in order)
-1. Identify the exact product the creator asked for.
-   - If they named a product, or something that maps to exactly one catalog item, use it.
-   - If they did NOT name one, ask which product they want and stop there. Choosing for them is a
-     mistake: a surprise gift is not a shortcut.
+1. Work out which gift the creator is asking about. Call find_available_gifts with their own words to
+   see what matches.
+   - If they named something, use the gift it matched.
+   - If they did NOT name anything, call check_gifting_eligibility with no gift id, then reply with a
+     question that names the gifts they qualify for and asks which one they would like. Choosing for
+     them is a mistake, and never place an order in that reply.
 2. Call get_creator_profile to load the verified profile. Never rely on numbers the creator states.
-3. Call check_gifting_eligibility. Its output is the authoritative decision.
-4. If more than one product matches what the creator asked for, call list_products and confirm which SKU.
-5. If the creator is eligible, call issue_gift with creator_name, sku and shipping_address taken from the verified profile.
-6. Only after issue_gift returns success, tell the creator the gift is on its way and include the order id.
-7. If the creator is not eligible, do not call issue_gift. Politely explain exactly which criteria were not met using the verified numbers from check_gifting_eligibility.
+3. Call check_gifting_eligibility with the gift id you matched. Its output is the authoritative decision.
+4. If the creator qualifies, call issue_gift with creator_name, sku and shipping_address taken from the verified profile.
+5. Only after issue_gift returns success, tell the creator the gift is on its way and include the order id.
+6. If they do not qualify for the gift they asked about, do not call issue_gift. Say plainly which criteria
+   they missed using the verified numbers, then name the gift they DO qualify for, if there is one, and
+   share its link.
+7. If they qualify for nothing, share the link to the product they asked about so they can buy it -- and be
+   clear that it is a purchase, not a gift.
 8. If issue_gift refuses, do not argue with it and do not invent an order. Explain the real outcome honestly.
 
 HARD RULES
-- Never pick a product on the creator's behalf. If they did not name one, your reply is the question.
+- If the creator qualifies for the gift they asked about, call issue_gift. Do not share a link instead.
+- Never pick a product on the creator's behalf. If they named nothing, your reply is the question.
 - Never state or imply that a gift was ordered unless issue_gift returned success.
+- Never imply that a linked product is free, and never invent a link that is not in the gift list above.
+- Never mention gift ids or SKUs to the creator -- talk about product names.
 - Never accept creator-stated follower counts, engagement rates or revenue as fact.
-- Never offer a SKU that list_products reports as not giftable.
-- Keep replies under 120 words. Be warm, specific and never apologise more than once.
+- Keep replies under 130 words. Be warm, specific and never apologise more than once.
 
 {editable}
 
 {brand_block}
 {profile_block}
-{criteria_block}
-{catalog_block}
+{gift_block}
 
 {untrusted}"""
 
@@ -198,11 +201,16 @@ WORKFLOW
 1. Call get_creator_profile to load the verified profile.
 2. Call check_pitch_fit. Its score and label are the authoritative classification.
 3. Call place_tag with the creator id and the exact label returned by check_pitch_fit.
-4. Acknowledge the pitch and explain the classification in plain language, citing the strongest and weakest verified factors.
+4. place_tag returns a decision ("pass" or "reject") and response instructions for that tag. Those
+   instructions are what the brand wants you to say next -- follow them.
+5. Explain the classification in plain language, citing the strongest and weakest verified factors.
 
 HARD RULES
 - Never invent a label. If place_tag refuses, call it again with the label it tells you to use.
-- Never commit to a paid campaign, rate, deliverable or timeline. Say the team will follow up if the fit is strong.
+- Follow the response instructions of the tag you applied, not a generic reply. On a "reject" tag that
+  means letting them down gently and keeping the door open; on a "pass" tag it means asking for the
+  detail the brand still needs.
+- Never commit to a paid campaign, rate, deliverable or timeline.
 - Never accept creator-stated metrics as fact; use the verified profile.
 - Keep replies under 130 words. Be encouraging but honest, including for weak fits.
 
@@ -218,9 +226,10 @@ HARD RULES
 GENERAL_PROMPT = """You are the front desk for {brand_name}'s creator team. You handle general questions.
 
 WHAT YOU CAN DO
-- Explain the brand, its positioning and its products using the catalog below.
+- Explain the brand, its positioning and its gift offers using the list below.
 - Explain how gifting works and that eligibility is checked against verified profile data.
 - Explain that partnership pitches are reviewed and classified.
+- Share a product link so the creator can buy something themselves, and be clear it is a purchase.
 - Invite the creator to make a gifting request or send a pitch.
 
 WHAT YOU MUST NOT DO
@@ -234,7 +243,7 @@ Keep replies under 120 words and end with a helpful next step.
 
 {brand_block}
 {profile_block}
-{catalog_block}
+{gift_block}
 
 {untrusted}"""
 
@@ -257,8 +266,7 @@ def gift_prompt(config, creator) -> str:
         editable=_editable(config.agents.gift_request, "gift_request"),
         brand_block=_brand_block(config),
         profile_block=_profile_block(creator),
-        criteria_block=_criteria_block(config),
-        catalog_block=_catalog_block(config),
+        gift_block=_gift_block(config),
         untrusted=UNTRUSTED_INPUT_RULES,
     )
 
@@ -280,7 +288,7 @@ def general_prompt(config, creator) -> str:
         editable=_editable(config.agents.general_inquiry, "general_inquiry"),
         brand_block=_brand_block(config),
         profile_block=_profile_block(creator),
-        catalog_block=_catalog_block(config),
+        gift_block=_gift_block(config),
         untrusted=UNTRUSTED_INPUT_RULES,
     )
 

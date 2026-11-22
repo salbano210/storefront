@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 
 import pytest
@@ -31,10 +32,10 @@ async def test_read_update_and_reset(client):
     current = await _config(client)
     assert current["version"] >= 1
     assert current["config"]["brand"]["name"] == "Summer Soft Skincare"
-    assert current["defaults"]["gifting"]["criteria"]["minimum_followers"] == 10000
+    assert current["defaults"]["gifting"]["offers"][0]["sku"] == "GT-SERUM-001"
 
     config = current["config"]
-    config["gifting"]["criteria"]["minimum_followers"] = 25000
+    config["gifting"]["offers"][0]["criteria"][0]["value"] = 75000
     updated = await client.put(
         "/api/config",
         json={"config": config, "expected_version": current["version"], "updated_by": "tester"},
@@ -44,12 +45,12 @@ async def test_read_update_and_reset(client):
     assert updated.json()["version"] == current["version"] + 1
 
     after = await _config(client)
-    assert after["config"]["gifting"]["criteria"]["minimum_followers"] == 25000
+    assert after["config"]["gifting"]["offers"][0]["criteria"][0]["value"] == 75000
 
     reset = await client.post("/api/config/reset", headers=ADMIN_HEADERS)
     assert reset.status_code == 200
     final = await _config(client)
-    assert final["config"]["gifting"]["criteria"]["minimum_followers"] == 10000
+    assert final["config"]["gifting"]["offers"][0]["criteria"][0]["value"] == 50000
 
 
 async def test_update_requires_passcode(client):
@@ -63,50 +64,63 @@ async def test_update_requires_passcode(client):
 async def test_invalid_values_are_rejected(client):
     current = await _config(client)
 
-    bad_rate = current["config"]
-    bad_rate["gifting"]["criteria"]["minimum_engagement_rate"] = 5.0
-    assert (
-        await client.put(
+    async def rejected(mutate) -> int:
+        payload = copy.deepcopy(current["config"])
+        mutate(payload)
+        response = await client.put(
             "/api/config",
-            json={"config": bad_rate, "expected_version": current["version"]},
+            json={"config": payload, "expected_version": current["version"]},
             headers=ADMIN_HEADERS,
         )
-    ).status_code == 422
+        return response.status_code
 
-    duplicate_sku = current["config"]
-    product = duplicate_sku["gifting"]["eligible_products"][0]
-    duplicate_sku["gifting"]["eligible_products"] = [product, dict(product)]
-    assert (
-        await client.put(
-            "/api/config",
-            json={"config": duplicate_sku, "expected_version": current["version"]},
-            headers=ADMIN_HEADERS,
-        )
-    ).status_code == 422
+    def _bad_percent(config):
+        # Percent metrics are stored as a fraction: 5.0 is a units mistake.
+        config["gifting"]["offers"][0]["criteria"][1]["value"] = 5.0
 
-    no_labels = current["config"]
-    no_labels["pitch"]["classification_labels"] = []
-    assert (
-        await client.put(
-            "/api/config",
-            json={"config": no_labels, "expected_version": current["version"]},
-            headers=ADMIN_HEADERS,
-        )
-    ).status_code == 422
+    def _duplicate_sku(config):
+        config["gifting"]["offers"][1]["sku"] = config["gifting"]["offers"][0]["sku"]
 
-    bad_weights = current["config"]
-    bad_weights["pitch"]["weights"]["category"] = -10
-    bad_weights["pitch"]["weights"]["engagement"] = 0
-    bad_weights["pitch"]["weights"]["followers"] = 0
-    bad_weights["pitch"]["weights"]["brand_revenue"] = 0
-    bad_weights["pitch"]["weights"]["storefront_sales"] = 0
-    assert (
-        await client.put(
-            "/api/config",
-            json={"config": bad_weights, "expected_version": current["version"]},
-            headers=ADMIN_HEADERS,
-        )
-    ).status_code == 422
+    def _duplicate_gift_id(config):
+        config["gifting"]["offers"][1]["id"] = config["gifting"]["offers"][0]["id"]
+
+    def _no_offers(config):
+        config["gifting"]["offers"] = []
+
+    def _unknown_metric(config):
+        config["gifting"]["offers"][0]["criteria"][0]["metric"] = "shoe_size"
+
+    def _wrong_operator(config):
+        # 'gte' is meaningless for a list metric.
+        config["gifting"]["offers"][2]["criteria"][1]["operator"] = "gte"
+
+    def _no_labels(config):
+        config["pitch"]["classification_labels"] = []
+
+    def _no_scoring(config):
+        config["pitch"]["scoring"] = []
+
+    def _zero_weights(config):
+        for item in config["pitch"]["scoring"]:
+            item["weight"] = 0
+
+    def _unscorable_metric(config):
+        config["pitch"]["scoring"][0]["metric"] = "audience_gender"
+
+    def _bad_url(config):
+        config["gifting"]["offers"][0]["url"] = "summersoft.example/serum"
+
+    assert await rejected(_bad_percent) == 422
+    assert await rejected(_duplicate_sku) == 422
+    assert await rejected(_duplicate_gift_id) == 422
+    assert await rejected(_no_offers) == 422
+    assert await rejected(_unknown_metric) == 422
+    assert await rejected(_wrong_operator) == 422
+    assert await rejected(_no_labels) == 422
+    assert await rejected(_no_scoring) == 422
+    assert await rejected(_zero_weights) == 422
+    assert await rejected(_unscorable_metric) == 422
+    assert await rejected(_bad_url) == 422
 
 
 async def test_stale_version_conflicts(client):
@@ -161,7 +175,8 @@ async def test_stored_config_that_no_longer_validates_is_reseeded():
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.ensure_seeded(db)
         assert config.brand.name == "Summer Soft Skincare"
-        assert config.pitch.weights["storefront_sales"] == 10
+        assert config.pitch.scoring[0].metric == "engagement_rate"
+        assert config.gifting.offers[0].sku == "GT-SERUM-001"
         assert version > 1
 
     # the healed version is what subsequent requests see

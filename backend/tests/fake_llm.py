@@ -46,17 +46,26 @@ def _find(results: list[tuple[str, dict]], name: str) -> dict | None:
     return None
 
 
-def _match_product(message: str, catalog: list[dict]) -> dict | None:
+def _last(results: list[tuple[str, dict]], name: str) -> dict | None:
+    for tool_name, payload in reversed(results):
+        if tool_name == name:
+            return payload
+    return None
+
+
+def _match_gift(message: str, gifts: list[dict]) -> dict | None:
     lowered = message.lower()
-    for product in catalog:
-        if product["sku"].lower() in lowered:
-            return product
-    for product in catalog:
+    for gift in gifts:
+        if gift["sku"].lower() in lowered:
+            return gift
+    for gift in gifts:
         words = [
-            word for word in product["name"].lower().split() if word not in STOPWORDS and len(word) > 2
+            word
+            for word in gift["name"].lower().split()
+            if word not in STOPWORDS and len(word) > 2
         ]
         if any(word in lowered for word in words):
-            return product
+            return gift
     return None
 
 
@@ -141,8 +150,10 @@ class FakeLLM:
         if agent == "general_handler":
             return self._result(
                 "HARD RULES\n- Never state a gift was ordered.\n\n"
-                "GIFTING CATALOG (SKU | product | giftable):\n"
-                "- GT-SERUM-001 | Barrier Repair Serum | giftable"
+                "GIFT OFFERS (SKU | product | price | link | criteria):\n"
+                "- GT-SERUM-001 | Barrier Repair Serum | $68 | "
+                "https://summersoft.example/products/barrier-repair-serum | "
+                "Followers is at least 50,000"
             )
         if agent == "creator_pitch_agent":
             return self._result(
@@ -193,16 +204,25 @@ class FakeLLM:
             return self._tools(
                 [
                     ("get_creator_profile", {}),
-                    ("check_gifting_eligibility", {}),
-                    ("list_products", {}),
+                    ("find_available_gifts", {"query": user}),
                 ]
             )
 
         profile = (_find(results, "get_creator_profile") or {}).get("creator") or {}
-        eligibility = _find(results, "check_gifting_eligibility") or {}
-        catalog = (_find(results, "list_products") or {}).get("products") or []
-        issued = _find(results, "issue_gift")
+        found = _find(results, "find_available_gifts") or {}
+        gifts = found.get("gifts") or []
 
+        gift = _match_gift(user, gifts)
+        if gift is None:
+            if len(gifts) == 1:
+                gift = gifts[0]
+            else:
+                options = ", ".join(item["name"] for item in gifts) or "one of our gifts"
+                return self._result(
+                    f"Happy to help! Which gift were you hoping for -- {options}?"
+                )
+
+        issued = _last(results, "issue_gift")
         if issued is not None:
             if issued.get("ok"):
                 return self._result(
@@ -213,35 +233,38 @@ class FakeLLM:
                 "I'm sorry, but I can't approve that gift. " + str(issued.get("message", ""))
             )
 
-        product = _match_product(user, catalog)
-        if product is None:
-            return self._result(
-                "Happy to help! Which product were you hoping for -- the Barrier Repair Serum, "
-                "the Hydrating Cleanser, the Overnight Recovery Mask, or the Vitamin C "
-                "Brightening Drops?"
+        # Step 1 -- check the gift the creator actually asked about.
+        targeted = _last(results, "check_gifting_eligibility")
+        if targeted is None:
+            return self._tools(
+                [("check_gifting_eligibility", {"gift_id": gift["gift_id"]})]
             )
 
-        if not product.get("eligible_for_gifting"):
-            return self._result(
-                f"{product['name']} isn't available for gifting at the moment, I'm afraid."
-            )
-
-        if not eligibility.get("eligible"):
+        if targeted.get("selected") == gift["gift_id"]:
+            if targeted.get("eligible"):
+                return self._tools([("issue_gift", self._gift_args(profile, gift))])
             if self.force_issue_gift_when_ineligible:
-                return self._tools([("issue_gift", self._gift_args(profile, product))])
-            failed = ", ".join(eligibility.get("failed_labels") or [])
-            return self._result(
-                "Thanks for asking. Against your verified profile you don't currently meet our "
-                f"gifting criteria ({failed}), so I can't send this one out right now."
-            )
+                return self._tools([("issue_gift", self._gift_args(profile, gift))])
+            # Step 2 -- sweep every offer so a decline can name an alternative.
+            return self._tools([("check_gifting_eligibility", {})])
 
-        return self._tools([("issue_gift", self._gift_args(profile, product))])
+        # Step 3 -- answer with the shortfall, and the alternative when there is one.
+        shortfalls = "; ".join(gift.get("shortfalls") or [])
+        reply = (
+            f"Thanks for asking. {gift['name']} isn't available to you right now -- against "
+            f"your verified profile, {shortfalls}."
+        )
+        alternatives = targeted.get("eligible_offers") or []
+        if alternatives:
+            best = alternatives[0]
+            reply += f" You do qualify for the {best['name']} though: {best['url']}"
+        return self._result(reply)
 
     @staticmethod
-    def _gift_args(profile: dict, product: dict) -> dict[str, Any]:
+    def _gift_args(profile: dict, gift: dict) -> dict[str, Any]:
         return {
             "creator_name": profile.get("name", ""),
-            "sku": product["sku"],
+            "sku": gift["sku"],
             "shipping_address": profile.get("shipping_address", ""),
         }
 
@@ -265,7 +288,7 @@ class FakeLLM:
                 )
             return self._result(f"I wasn't able to apply that tag. {placed.get('message', '')}")
 
-        tag = "Poor Match" if self.force_wrong_tag else fit.get("label")
+        tag = "Not a fit" if self.force_wrong_tag else fit.get("label")
         return self._tools([("place_tag", {"creator_id": fit.get("creator_id"), "tag": tag})])
 
     # -- plain text --------------------------------------------------------

@@ -84,17 +84,19 @@ async def test_scenario_2_rejected_gifting(client, use_fake_llm):
     payload = response.json()
 
     assert payload["outcome"]["type"] == "gift_declined"
-    assert "Follower count" in payload["outcome"]["failed_criteria"]
+    assert "Followers" in payload["outcome"]["failed_criteria"]
+    # Paul qualifies for nothing high-end, but the Discovery Set is within reach.
+    assert payload["outcome"]["alternatives"][0]["name"] == "Discovery Set"
     assert await gift_order_count() == before
 
     events = await events_for(client, payload["conversation_id"])
     assert not any(event["type"] == "gift_issued" for event in events)
     criteria = [event for event in events if event["type"] == "criteria_evaluated"]
     assert criteria and criteria[0]["status"] == "blocked"
-    checks = criteria[0]["payload"]["checks"]
+    checks = criteria[0]["payload"]["offers"][0]["checks"]
     assert {check["criterion"] for check in checks if not check["passed"]} == {
-        "minimum_followers",
-        "minimum_brand_revenue",
+        "followers",
+        "brand_attributed_revenue",
     }
 
 
@@ -114,7 +116,8 @@ async def test_scenario_3_pitch_applies_tag(client, use_fake_llm):
 
     assert payload["intent"] == "creator_pitch"
     assert payload["agent"] == "creator_pitch_agent"
-    assert payload["outcome"]["type"] == "tag_applied"
+    assert payload["outcome"]["type"] == "pitch_passed"
+    assert payload["outcome"]["decision"] == "pass"
     assert payload["outcome"]["tag"] == "Excellent Match"
     assert payload["outcome"]["score"] == pytest.approx(100.0)
 
@@ -163,7 +166,7 @@ async def test_scenario_5_multiturn_clarification(client, use_fake_llm):
     assert first.status_code == 200
     first_payload = first.json()
     assert first_payload["outcome"]["type"] == "inquiry"
-    assert "which product" in first_payload["reply"].lower()
+    assert "which gift" in first_payload["reply"].lower()
 
     second = await send(
         client,
@@ -191,8 +194,10 @@ async def test_scenario_6_config_change_changes_outcome(client, use_fake_llm):
 
     current = (await client.get("/api/config", headers=ADMIN_HEADERS)).json()
     config = current["config"]
-    config["gifting"]["criteria"]["minimum_followers"] = 1000
-    config["gifting"]["criteria"]["minimum_brand_revenue"] = 0
+    # Relax the serum's *own* criteria to a single easy rule.
+    config["gifting"]["offers"][0]["criteria"] = [
+        {"metric": "followers", "operator": "gte", "value": 1000}
+    ]
 
     updated = await client.put(
         "/api/config",
@@ -277,7 +282,7 @@ async def test_scenario_10_bad_tag_is_corrected(client, use_fake_llm):
         "I'd love to partner with Summer Soft Skincare on a launch campaign.",
     )
     payload = response.json()
-    assert payload["outcome"]["type"] == "tag_applied"
+    assert payload["outcome"]["type"] == "pitch_passed"
     assert payload["outcome"]["tag"] == "Excellent Match"
 
     events = await events_for(client, payload["conversation_id"])
@@ -287,14 +292,59 @@ async def test_scenario_10_bad_tag_is_corrected(client, use_fake_llm):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 11 -- a non-giftable SKU is refused
+# Scenario 11 -- a product the brand does not offer is never promised
 # ---------------------------------------------------------------------------
-async def test_scenario_11_non_giftable_sku_refused(client, use_fake_llm):
+async def test_scenario_11_unknown_product_is_not_promised(client, use_fake_llm):
     use_fake_llm()
     before = await gift_order_count()
     response = await send(client, "creator_001", "Can you send me the Limited Edition Holiday Kit?")
     payload = response.json()
-    assert "isn't available for gifting" in payload["reply"]
+
     assert await gift_order_count() == before
+    assert "which gift" in payload["reply"].lower()
+    assert "on its way" not in payload["reply"]
+
+    events = await events_for(client, payload["conversation_id"])
+    assert not any(event["type"] == "gift_issued" for event in events)
+
+
+# ---------------------------------------------------------------------------
+# Scenario 12 -- ineligible for the gift asked about, offered one they qualify for
+# ---------------------------------------------------------------------------
+async def test_scenario_12_alternative_gift_is_suggested(client, use_fake_llm):
+    """Martin is below the serum's revenue bar but clears the cleanser's criteria."""
+    use_fake_llm()
+    before = await gift_order_count()
+    response = await send(client, "creator_002", "Could I try the Barrier Repair Serum?")
+    payload = response.json()
+
+    assert payload["outcome"]["type"] == "gift_declined"
+    assert await gift_order_count() == before
+    # The reply names the shortfall *and* the gift he does qualify for, with its link.
+    assert "Brand-attributed revenue" in payload["reply"]
+    assert "Hydrating Cleanser" in payload["reply"]
+    assert "https://summersoft.example/products/hydrating-cleanser" in payload["reply"]
+
+
+# ---------------------------------------------------------------------------
+# Scenario 13 -- eligible for nothing: share the link, be clear it is a purchase
+# ---------------------------------------------------------------------------
+async def test_scenario_13_no_gift_available_shares_link(client, use_fake_llm):
+    """Peter clears none of the three gifts, so the agent must not promise anything."""
+    use_fake_llm()
+    before = await gift_order_count()
+    response = await send(client, "creator_004", "Could I get the Barrier Repair Serum?")
+    payload = response.json()
+
+    assert payload["outcome"]["type"] == "gift_declined"
+    assert payload["outcome"]["alternatives"] == []
+    assert await gift_order_count() == before
+
+    events = await events_for(client, payload["conversation_id"])
+    assert not any(event["type"] == "gift_issued" for event in events)
+    assert any(
+        event["type"] == "criteria_evaluated" and event["status"] == "blocked"
+        for event in events
+    )
 
 

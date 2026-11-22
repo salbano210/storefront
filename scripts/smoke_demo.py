@@ -93,7 +93,7 @@ async def main() -> int:
         check("gift_issued event", "gift_issued" in types(evts))
         print(f"  reply: {result['reply'][:220]}\n")
 
-        print("2. Rejected gifting request (creator_003, below follower + revenue minimums)")
+        print("2. Rejected gifting request (creator_003, below the serum's follower + revenue bars)")
         result = await chat(client, "creator_003", "Could I please get the Barrier Repair Serum?")
         total_cost += result["usage"].get("cost_usd") or 0
         evts = await events(client, result["conversation_id"])
@@ -105,6 +105,11 @@ async def main() -> int:
                 event["type"] == "criteria_evaluated" and event["status"] == "blocked"
                 for event in evts
             ),
+        )
+        check(
+            "names the gift they DO qualify for",
+            "Discovery Set" in result["reply"],
+            result["outcome"].get("alternatives"),
         )
         print(f"  reply: {result['reply'][:220]}\n")
 
@@ -118,7 +123,12 @@ async def main() -> int:
         total_cost += result["usage"].get("cost_usd") or 0
         evts = await events(client, result["conversation_id"])
         check("routed as creator_pitch", result["intent"] == "creator_pitch", result["intent"])
-        check("tag applied", result["outcome"]["type"] == "tag_applied", str(result["outcome"]))
+        check(
+            "pitch passed",
+            result["outcome"]["type"] == "pitch_passed",
+            str(result["outcome"]),
+        )
+        check("decision recorded", result["outcome"].get("decision") == "pass")
         check("tag_applied event", "tag_applied" in types(evts))
         print(f"  reply: {result['reply'][:220]}\n")
 
@@ -139,7 +149,18 @@ async def main() -> int:
         print("5. Multi-turn clarification (creator_002 asks without naming a product)")
         first = await chat(client, "creator_002", "Can I get a free gift?")
         total_cost += first["usage"].get("cost_usd") or 0
-        check("agent asks which product", "?" in first["reply"], first["reply"][:90])
+        first_events = await events(client, first["conversation_id"])
+        check(
+            "agent asks a question instead of choosing",
+            "?" in first["reply"],
+            first["reply"][:90],
+        )
+        check(
+            "no order placed on a vague request",
+            first["outcome"]["type"] != "gift_issued",
+            first["outcome"]["type"],
+        )
+        check("nothing issued", "gift_issued" not in types(first_events))
         second = await chat(
             client,
             "creator_002",
@@ -155,11 +176,12 @@ async def main() -> int:
         )
         print(f"  reply: {second['reply'][:220]}\n")
 
-        print("6. Configuration change alters behaviour (lower the follower minimum)")
+        print("6. Configuration change alters behaviour (relax the serum's own criteria)")
         current = (await client.get("/api/config", headers=ADMIN)).json()
         config = current["config"]
-        config["gifting"]["criteria"]["minimum_followers"] = 1000
-        config["gifting"]["criteria"]["minimum_brand_revenue"] = 0
+        config["gifting"]["offers"][0]["criteria"] = [
+            {"metric": "followers", "operator": "gte", "value": 1000}
+        ]
         updated = await client.put(
             "/api/config",
             json={
@@ -187,9 +209,9 @@ async def main() -> int:
         await client.post("/api/config/reset", headers=ADMIN)
 
         print("7. Verified data beats creator claims (same request, different profiles)")
-        strong = await chat(client, "creator_005", "Could I get the Overnight Recovery Mask?")
+        strong = await chat(client, "creator_005", "Could I get the Discovery Set?")
         total_cost += strong["usage"].get("cost_usd") or 0
-        weak = await chat(client, "creator_004", "Could I get the Overnight Recovery Mask?")
+        weak = await chat(client, "creator_004", "Could I get the Discovery Set?")
         total_cost += weak["usage"].get("cost_usd") or 0
         check(
             "qualifying creator approved",
@@ -201,6 +223,34 @@ async def main() -> int:
             weak["outcome"]["type"] != "gift_issued",
             weak["outcome"]["type"],
         )
+
+        print("8. Ineligible for the hero gift, offered the one they do qualify for")
+        result = await chat(client, "creator_002", "Could I try the Barrier Repair Serum?")
+        total_cost += result["usage"].get("cost_usd") or 0
+        check(
+            "declined without an order",
+            result["outcome"]["type"] == "gift_declined",
+            result["outcome"]["type"],
+        )
+        check(
+            "alternative offered",
+            (result["outcome"].get("alternatives") or [{}])[0].get("name") == "Hydrating Cleanser",
+            str(result["outcome"].get("alternatives")),
+        )
+        check("alternative link shared", "hydrating-cleanser" in result["reply"])
+        print(f"  reply: {result['reply'][:220]}\n")
+
+        print("9. Eligible for nothing: no promise, but the buy link")
+        result = await chat(client, "creator_004", "Could I get the Barrier Repair Serum?")
+        total_cost += result["usage"].get("cost_usd") or 0
+        check(
+            "no gift promised",
+            result["outcome"]["type"] == "gift_declined",
+            result["outcome"]["type"],
+        )
+        check("no alternatives", not (result["outcome"].get("alternatives") or []))
+        check("reply does not claim a gift", "on its way" not in result["reply"].lower())
+        print(f"  reply: {result['reply'][:220]}\n")
 
     passed = sum(1 for _, ok, _ in RESULTS if ok)
     print(f"\n{passed}/{len(RESULTS)} checks passed · total model spend ${total_cost:.5f}")

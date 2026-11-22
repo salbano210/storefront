@@ -31,17 +31,12 @@ class ConfigConflictError(ConfigError):
 
 
 def load_default_config() -> BrandConfig:
-    """Read the repo default config, seeding models + products from env/data."""
+    """Read the repo default config, then let env vars override the models."""
     try:
         with DEFAULT_CONFIG_PATH.open("r", encoding="utf-8") as handle:
             raw = json.load(handle)
     except (OSError, json.JSONDecodeError) as exc:  # pragma: no cover - corrupt repo file
         raise ConfigError(f"cannot read default brand config: {exc}") from exc
-
-    # The product catalog fixture is the source of truth for the default SKUs.
-    products = data_store.list_products()
-    if products:
-        raw.setdefault("gifting", {})["eligible_products"] = products
 
     # Env vars win over the checked-in defaults so deployment config is explicit.
     raw.setdefault("models", {}).update(

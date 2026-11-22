@@ -24,7 +24,14 @@ from .services.llm_client import LLMClient
 from .tools.registry import ToolContext
 from . import guardrails
 
-TERMINAL_OUTCOMES = {"gift_issued", "gift_duplicate", "gift_declined", "tag_applied"}
+TERMINAL_OUTCOMES = {
+    "gift_issued",
+    "gift_duplicate",
+    "gift_declined",
+    "gift_suggested",
+    "pitch_passed",
+    "pitch_rejected",
+}
 
 
 @dataclass
@@ -61,6 +68,65 @@ async def _turn_usage(db: AsyncSession, conversation_id: str, start_id: int) -> 
     }
 
 
+def _suggested_gift(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+    """A gift the agent pointed the creator at without placing an order.
+
+    Deterministic: the reply must actually contain a gift's link, or mention a link
+    when exactly one gift matched. Anything looser would mislabel a browse as a
+    suggestion.
+    """
+    found = run.any_ok("find_available_gifts")
+    gifts = (found or {}).get("gifts") or []
+    if not gifts:
+        return None
+    reply = run.text or ""
+    for gift in gifts:
+        url = gift.get("url")
+        if url and url in reply:
+            return gift
+    if len(gifts) == 1 and "link" in reply.lower():
+        return gifts[0]
+    return None
+
+
+def _eligibility_result(run: tool_agent.AgentRun, *, all_offers: bool) -> dict[str, Any] | None:
+    """The last successful eligibility check, optionally restricted to the full sweep."""
+    for record in reversed(run.tool_calls):
+        if record.name != "check_gifting_eligibility" or not record.result.get("ok"):
+            continue
+        if all_offers and record.result.get("selected") != "all":
+            continue
+        return record.result
+    return None
+
+
+def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+    """The gift the creator asked about that they do *not* qualify for.
+
+    A creator can be ineligible for the gift they asked about while still
+    qualifying for a cheaper one, so "did they qualify for anything" is the wrong
+    question. This finds the specific gift under discussion.
+    """
+    result = _eligibility_result(run, all_offers=False)
+    if result is None:
+        return None
+    offers = result.get("offers") or []
+    selected = result.get("selected")
+
+    if selected and selected != "all":
+        match = next((offer for offer in offers if offer["gift_id"] == selected), None)
+        return match if match is not None and not match["eligible"] else None
+
+    found = run.any_ok("find_available_gifts") or {}
+    for candidate in found.get("gifts") or []:
+        offer = next(
+            (item for item in offers if item["gift_id"] == candidate["gift_id"]), None
+        )
+        if offer is not None and not offer["eligible"]:
+            return offer
+    return None
+
+
 def _extract_outcome(run: tool_agent.AgentRun, target_agent: str) -> dict[str, Any]:
     """Turn the tool trace into a compact summary for the UI."""
     blocks = [
@@ -82,22 +148,43 @@ def _extract_outcome(run: tool_agent.AgentRun, target_agent: str) -> dict[str, A
             "sku": gift.get("sku"),
         }
     else:
-        eligibility = run.result_of("check_gifting_eligibility")
         tag = run.any_ok("place_tag")
         if tag:
+            decision = tag.get("decision") or "reject"
             outcome = {
-                "type": "tag_applied",
+                "type": "pitch_passed" if decision == "pass" else "pitch_rejected",
+                "decision": decision,
                 "tag": tag.get("tag"),
                 "score": tag.get("score"),
                 "duplicate": bool(tag.get("duplicate")),
             }
-        elif eligibility is not None and not eligibility.get("eligible", True):
-            outcome = {
-                "type": "gift_declined",
-                "failed_criteria": eligibility.get("failed_labels", []),
-            }
         else:
-            outcome = {"type": "inquiry", "agent": target_agent}
+            declined = _declined_offer(run)
+            if declined is not None:
+                sweep = _eligibility_result(run, all_offers=True) or {}
+                outcome = {
+                    "type": "gift_declined",
+                    "gift": declined["name"],
+                    "gift_id": declined["gift_id"],
+                    "failed_criteria": declined["failed_labels"],
+                    "shortfalls": declined["shortfalls"],
+                    "alternatives": [
+                        {"name": item["name"], "url": item["url"]}
+                        for item in sweep.get("eligible_offers") or []
+                    ],
+                }
+            else:
+                suggested = _suggested_gift(run)
+                if suggested is not None:
+                    outcome = {
+                        "type": "gift_suggested",
+                        "product": suggested.get("name"),
+                        "sku": suggested.get("sku"),
+                        "url": suggested.get("url"),
+                        "eligible": suggested.get("eligible"),
+                    }
+                else:
+                    outcome = {"type": "inquiry", "agent": target_agent}
 
     if blocks:
         outcome["guardrail_blocks"] = blocks

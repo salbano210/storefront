@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, formatters } from '../api'
 import { useSession } from '../session.jsx'
 import EventTimeline from '../components/EventTimeline.jsx'
+import Transcript from '../components/Transcript.jsx'
 import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
 
 const EMPTY_FILTERS = {
@@ -20,6 +21,7 @@ export default function Logs() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [live, setLive] = useState(true)
+  const [view, setView] = useState('transcript')
   const [selectedId, setSelectedId] = useState(null)
   const [passcodeDraft, setPasscodeDraft] = useState('')
   const lastIdRef = useRef(0)
@@ -120,6 +122,23 @@ export default function Logs() {
       </header>
 
       <div className="logs-toolbar">
+        <div className="tabs">
+          <button
+            type="button"
+            className={`tab ${view === 'transcript' ? 'active' : ''}`}
+            onClick={() => setView('transcript')}
+          >
+            Transcript
+          </button>
+          <button
+            type="button"
+            className={`tab ${view === 'raw' ? 'active' : ''}`}
+            onClick={() => setView('raw')}
+          >
+            Raw events
+          </button>
+        </div>
+
         <label className="field inline">
           <span>Scope</span>
           <select
@@ -252,7 +271,11 @@ export default function Logs() {
       <ErrorNote error={needsPasscode ? null : error} onRetry={() => load(true)} />
       {loading && <Spinner label="Loading events" />}
 
-      <EventTimeline events={events} selectedId={selectedId} onSelect={setSelectedId} />
+      {view === 'transcript' ? (
+        <Transcript events={events} />
+      ) : (
+        <EventTimeline events={events} selectedId={selectedId} onSelect={setSelectedId} />
+      )}
     </div>
   )
 }
