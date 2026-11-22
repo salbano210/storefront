@@ -284,6 +284,9 @@ export function decisionFacts(outcome) {
 
 const TRACE_AGENTS = new Set(['router_agent', 'guard', 'admin'])
 
+/** Events that describe a model call rather than a business step. */
+const MODEL_EVENTS = new Set(['llm_request', 'llm_response', 'llm_error', 'llm_fallback'])
+
 function emptyTurn(event, key) {
   return {
     key,
@@ -327,8 +330,8 @@ export function groupTurns(events) {
     }
     // The started event duplicates the completed event's arguments.
     if (event.type === 'tool_call_started') continue
-    // Model calls are summarised once per turn rather than listed per call.
-    if (event.type === 'llm_response') {
+    // Model-level events are summarised once per turn rather than listed per call.
+    if (MODEL_EVENTS.has(event.type)) {
       current.models.push(event)
       continue
     }

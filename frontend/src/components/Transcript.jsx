@@ -51,6 +51,17 @@ function BucketBody({ event }) {
         <ul className="step-list">
           {payload.calls.map((call) => {
             const detail = call.payload || {}
+            if (call.type !== 'llm_response') {
+              return (
+                <li key={call.id}>
+                  <span className="step-list-name">
+                    {call.type === 'llm_fallback' ? 'fell back' : 'failed'}
+                  </span>
+                  <span className="muted small">{call.summary}</span>
+                  <span className="mono" />
+                </li>
+              )
+            }
             const chosen = (detail.tool_calls || []).map((tool) => tool.name)
             const asked = chosen.length
               ? `chose ${chosen.join(', ')}`

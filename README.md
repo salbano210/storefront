@@ -206,7 +206,7 @@ The second asserts that a request naming no product gets a question rather than 
 |---|---|
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / pitch passed / pitch rejected). No agent reasoning, tools or configuration is visible here. |
-| **Agent logs** (`/logs`) | A **transcript** by default: the creator's message, an expandable trace of that turn with one bucket per tool call (arguments and raw result), the criteria tables, and the agent's reply with its outcome. **Raw events** is a tab away when you want the flat event stream — intent classification, handoffs, model/token/cost/latency, guardrail blocks. Filter by creator, conversation, agent or event type. |
+| **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, tag, decision, failed criteria, the alternative offered), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. Pitch holds the scoring metrics (tick, weight, ideal) and the tags with their pass/reject decision and follow-up copy. Plus per-agent instructions and models, a raw JSON editor and the live JSON schema. |
 
 ---
@@ -290,7 +290,7 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 110 tests, no network required
+.venv/bin/python -m pytest -q          # 111 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
@@ -487,10 +487,11 @@ backend/
     metrics.py     the verified-metric registry + rule language (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria, pitch scoring (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           110 tests including a deterministic fake model
+  tests/           111 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, AdminConfig, Logs
-  src/components/  Transcript, EventTimeline, CriteriaTable, CriteriaBuilder, GiftRows,
+  src/components/  Transcript, transcriptModel (its reading logic, no React),
+                   EventTimeline, CriteriaTable, CriteriaBuilder, GiftRows,
                    AdminFields, ui
 scripts/           smoke_demo.py, debug_turn.py
 render.yaml, Dockerfile, DEPLOYMENT.md
