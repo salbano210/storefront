@@ -23,7 +23,7 @@ WEIGHT_KEYS = ("category", "engagement", "followers", "brand_revenue", "storefro
 class BrandInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field("Demo Brand", min_length=1, max_length=80)
+    name: str = Field("Summer Soft Skincare", min_length=1, max_length=80)
     description: str = Field("A premium skincare brand", max_length=400)
     positioning: str = Field("", max_length=600)
     tone: str = Field("warm, concise, professional", max_length=200)

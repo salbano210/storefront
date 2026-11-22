@@ -47,7 +47,7 @@ git push -u origin main
 5. Confirm the deploy: `https://<service>.onrender.com/api/health` should return
    `{"status":"ok","database":"ok","config_version":1,...}`.
 
-6. Open the URL, chat as Jessica Miller, then check `/logs`. If events appear, the deployment is
+6. Open the URL, chat as Kathryn Bigelow, then check `/logs`. If events appear, the deployment is
    complete.
 
 ---
@@ -98,11 +98,11 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<service>.onrender.com/api/conf
 
 Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable presenter flow:
 
-1. `/` → pick **Jessica Miller** → ask for the Barrier Repair Serum → open `/logs` and show the
+1. `/` → pick **Kathryn Bigelow** → ask for the Barrier Repair Serum → open `/logs` and show the
    criteria table, the tool calls and the `gift_issued` event.
-2. `/` → pick **Tyler Brooks** → claim 500k followers → show the `guardrail_blocked` event using the
+2. `/` → pick **Peter Bogdanovich** → claim 500k followers → show the `guardrail_blocked` event using the
    verified 8,210 followers.
-3. `/admin` → lower `minimum_followers` → save → back to chat as **Aisha Patel** → the gift is now
+3. `/admin` → lower `minimum_followers` → save → back to chat as **Paul Thomas Anderson** → the gift is now
    approved, and the log shows `config v2`.
 
 ---

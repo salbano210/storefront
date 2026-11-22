@@ -31,7 +31,7 @@ from app.services import config_manager, llm_client  # noqa: E402
 
 
 async def main() -> None:
-    message = sys.argv[1] if len(sys.argv) > 1 else "I'd love to partner with Demo Brand."
+    message = sys.argv[1] if len(sys.argv) > 1 else "I'd love to partner with Summer Soft Skincare."
     creator_id = sys.argv[2] if len(sys.argv) > 2 else "creator_005"
 
     await init_db()

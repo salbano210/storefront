@@ -24,7 +24,7 @@ export default function App() {
           <div className="brand">
             <span className="wordmark">storefront</span>
             <span className="brand-divider" />
-            <span className="brand-chip">Demo Brand</span>
+            <span className="brand-chip">Summer Soft Skincare</span>
           </div>
           <nav className="nav">
             {NAV.map((item) => (

@@ -7,7 +7,7 @@ import { Avatar, Badge, Chip, ErrorNote, Spinner } from '../components/ui.jsx'
 const QUICK_PROMPTS = [
   "Hi! I'd love to try the Barrier Repair Serum.",
   'Can I get a free gift?',
-  "I'd love to partner with Demo Brand on a campaign.",
+  "I'd love to partner with Summer Soft Skincare on a campaign.",
   'What products do you have?',
 ]
 
@@ -152,7 +152,7 @@ export default function CreatorChat() {
           <div className="chat-brand">
             <Avatar src={creator?.image} initials={creator?.initials || '··'} size={40} />
             <div>
-              <strong>Demo Brand</strong>
+              <strong>Summer Soft Skincare</strong>
               <span className="chat-sub">Creator concierge · replies in seconds</span>
             </div>
           </div>
@@ -181,7 +181,7 @@ export default function CreatorChat() {
           {messages.length === 0 && (
             <div className="chat-intro">
               <p>
-                You're chatting with <strong>Demo Brand</strong> as{' '}
+                You're chatting with <strong>Summer Soft Skincare</strong> as{' '}
                 <strong>{creator?.name || creatorId}</strong>. Ask about a product, request a gift,
                 or pitch a partnership.
               </p>
@@ -248,7 +248,7 @@ export default function CreatorChat() {
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Write a message to Demo Brand…"
+            placeholder="Write a message to Summer Soft Skincare…"
             disabled={busy}
             maxLength={4000}
           />

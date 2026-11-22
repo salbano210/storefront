@@ -26,7 +26,7 @@ async def test_issue_gift_refuses_ineligible_creator(tool_context, gift_order_co
         result = await execute_tool(
             "issue_gift",
             {
-                "creator_name": "Aisha Patel",
+                "creator_name": "Paul Thomas Anderson",
                 "sku": "GT-SERUM-001",
                 "shipping_address": "42 Cedar Lane, Brooklyn, NY 11201",
             },
@@ -50,7 +50,7 @@ async def test_issue_gift_happy_path(tool_context, gift_order_count):
         result = await execute_tool(
             "issue_gift",
             {
-                "creator_name": "Jessica Miller",
+                "creator_name": "Kathryn Bigelow",
                 "sku": "GT-SERUM-001",
                 "shipping_address": "123 Example Street, Boston, MA 02110",
             },
@@ -73,7 +73,7 @@ async def test_issue_gift_happy_path(tool_context, gift_order_count):
 
 async def test_issue_gift_is_idempotent(tool_context, gift_order_count):
     args = {
-        "creator_name": "Jessica Miller",
+        "creator_name": "Kathryn Bigelow",
         "sku": "GT-SERUM-001",
         "shipping_address": "123 Example Street, Boston, MA 02110",
     }
@@ -95,7 +95,7 @@ async def test_issue_gift_rejects_extra_fields(tool_context):
         result = await execute_tool(
             "issue_gift",
             {
-                "creator_name": "Jessica Miller",
+                "creator_name": "Kathryn Bigelow",
                 "sku": "GT-SERUM-001",
                 "shipping_address": "123 Example Street, Boston, MA 02110",
                 "quantity": 5,
@@ -111,7 +111,7 @@ async def test_issue_gift_rejects_non_giftable_sku(tool_context):
         result = await execute_tool(
             "issue_gift",
             {
-                "creator_name": "Jessica Miller",
+                "creator_name": "Kathryn Bigelow",
                 "sku": "GT-KIT-099",
                 "shipping_address": "123 Example Street, Boston, MA 02110",
             },
@@ -125,7 +125,7 @@ async def test_issue_gift_rejects_unknown_sku(tool_context):
     async with tool_context("creator_001") as (ctx, _db):
         result = await execute_tool(
             "issue_gift",
-            {"creator_name": "Jessica Miller", "sku": "NOPE-999", "shipping_address": "x"},
+            {"creator_name": "Kathryn Bigelow", "sku": "NOPE-999", "shipping_address": "x"},
             ctx,
         )
         assert result["ok"] is False
@@ -137,7 +137,7 @@ async def test_issue_gift_uses_verified_identity(tool_context):
         result = await execute_tool(
             "issue_gift",
             {
-                "creator_name": "Jessica M. (biggest fan)",
+                "creator_name": "Kathryn B. (biggest fan)",
                 "sku": "GT-MASK-003",
                 "shipping_address": "Somewhere else entirely",
             },
@@ -148,7 +148,7 @@ async def test_issue_gift_uses_verified_identity(tool_context):
 
         order = await db.scalar(select(GiftOrder).where(GiftOrder.session_id == ctx.session_id))
         assert order is not None
-        assert order.creator_name == "Jessica Miller"
+        assert order.creator_name == "Kathryn Bigelow"
         assert order.shipping_address == "123 Example Street, Boston, MA 02110"
 
         rows = await _events(ctx.conversation_id, db)

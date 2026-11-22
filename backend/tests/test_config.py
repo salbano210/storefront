@@ -30,7 +30,7 @@ async def test_config_requires_passcode(client):
 async def test_read_update_and_reset(client):
     current = await _config(client)
     assert current["version"] >= 1
-    assert current["config"]["brand"]["name"] == "Demo Brand"
+    assert current["config"]["brand"]["name"] == "Summer Soft Skincare"
     assert current["defaults"]["gifting"]["criteria"]["minimum_followers"] == 10000
 
     config = current["config"]
@@ -160,7 +160,7 @@ async def test_stored_config_that_no_longer_validates_is_reseeded():
 
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.ensure_seeded(db)
-        assert config.brand.name == "Demo Brand"
+        assert config.brand.name == "Summer Soft Skincare"
         assert config.pitch.weights["storefront_sales"] == 10
         assert version > 1
 
@@ -168,4 +168,4 @@ async def test_stored_config_that_no_longer_validates_is_reseeded():
     async with AsyncSessionLocal() as db:
         version_again, config_again = await config_manager.get_current(db)
         assert version_again == version
-        assert config_again.brand.name == "Demo Brand"
+        assert config_again.brand.name == "Summer Soft Skincare"

@@ -236,7 +236,7 @@ class FakeLLM:
         if placed is not None and placed.get("ok"):
             return self._result(f"Your profile has been tagged {placed.get('tag')}.")
         return self._result(
-            "Demo Brand makes clinically-informed, fragrance-free skincare. "
+            "Summer Soft Skincare makes clinically-informed, fragrance-free skincare. "
             "Would you like to request a gift or send over a partnership pitch?"
         )
 

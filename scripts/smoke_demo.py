@@ -112,7 +112,7 @@ async def main() -> int:
         result = await chat(
             client,
             "creator_005",
-            "Hi Demo Brand! I'd love to partner with you on a launch campaign for the new serum. "
+            "Hi Summer Soft Skincare! I'd love to partner with you on a launch campaign for the new serum. "
             "I publish long-form reviews and a weekly routine series.",
         )
         total_cost += result["usage"].get("cost_usd") or 0

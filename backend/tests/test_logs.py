@@ -74,7 +74,7 @@ async def test_transcript_and_export(client, use_fake_llm):
     conversation_id = response.json()["conversation_id"]
 
     transcript = (await client.get(f"/api/conversations/{conversation_id}")).json()
-    assert transcript["conversation"]["creator_name"] == "Jessica Miller"
+    assert transcript["conversation"]["creator_name"] == "Kathryn Bigelow"
     assert [message["role"] for message in transcript["messages"]] == ["creator", "agent"]
     assert transcript["events"], "the transcript must carry the execution events"
 
@@ -91,7 +91,7 @@ async def test_log_filters_and_meta(client, use_fake_llm):
     meta = (await client.get("/api/logs/meta")).json()
     assert "gift_issued" in meta["event_types"]
     assert "gift_request_agent" in meta["agents"]
-    assert meta["conversations"][0]["creator_name"] == "Jessica Miller"
+    assert meta["conversations"][0]["creator_name"] == "Kathryn Bigelow"
 
     filtered = (await client.get("/api/logs", params={"agent": "gift_request_agent"})).json()
     assert filtered["count"] > 0

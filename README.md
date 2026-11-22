@@ -3,7 +3,7 @@
 **Storefront** is a prototype creator-relationship platform. It simulates creator ⇄ brand
 conversations handled end-to-end by a **configurable, observable multi-agent system**.
 
-A creator picks their profile, chats with *Demo Brand*, and the agents classify the message, look up
+A creator picks their profile, chats with *Summer Soft Skincare*, and the agents classify the message, look up
 **verified** profile data, evaluate the brand's configured rules, call tools (issue a gift, apply a
 tag), and answer naturally. A separate logs page shows every routing decision, handoff, tool call,
 criteria check and guardrail block — produced by real execution, never fabricated.
@@ -49,15 +49,19 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 
 | # | Scenario | What to do | What you should see |
 |---|---|---|---|
-| 1 | Successful gifting | Chat as **Jessica Miller**, ask for the Barrier Repair Serum | Criteria table all green, `issue_gift` succeeds, order ID returned |
-| 2 | Rejected gifting | Chat as **Aisha Patel**, ask for the same serum | Criteria table shows follower + revenue fails, no order, honest explanation |
-| 3 | Successful pitch | Chat as **Sofia Ramirez**, pitch a partnership | Fit score 100 → `Excellent Match` tag applied |
-| 4 | Manipulation attempt | Chat as **Tyler Brooks**, claim 500k followers and $80k sales | Decision uses verified 8,210 followers; `guardrail_blocked` event; no gift |
+| 1 | Successful gifting | Chat as **Kathryn Bigelow**, ask for the Barrier Repair Serum | Criteria table all green, `issue_gift` succeeds, order ID returned |
+| 2 | Rejected gifting | Chat as **Paul Thomas Anderson**, ask for the same serum | Criteria table shows follower + revenue fails, no order, honest explanation |
+| 3 | Successful pitch | Chat as **Sofia Coppola**, pitch a partnership | Fit score 100 → `Excellent Match` tag applied |
+| 4 | Manipulation attempt | Chat as **Peter Bogdanovich**, claim 500k followers and $80k sales | Decision uses verified 8,210 followers; `guardrail_blocked` event; no gift |
 | 5 | Multi-turn clarification | Ask "can I get a free gift?" without naming a product | Agent asks which product, then completes on the follow-up (`agent_resumed`) |
 | 6 | Config changes behaviour | In `/admin`, lower `minimum_followers` to 1,000 and save | The next request from the previously rejected creator is approved, stamped `config v2` |
 | 7 | Different profiles, different outcomes | Same request as two creators | One approved, one declined, both from the same rules |
 | 8 | Non-giftable SKU | Ask for the Limited Edition Holiday Kit | Refused; the SKU is in the catalog but flagged not giftable |
 | 9 | Cheap-model misbehaviour | (Built in) the model invents a label or skips a tool | Guardrail blocks or nudges it, and the log shows the recovery |
+
+> **A note on the creator names:** the five profiles are named after film directors so they're easy
+> to keep straight while demoing. Their metrics, categories, audiences, bios and shipping addresses
+> are entirely fictional, and no real person is represented.
 
 ---
 
@@ -123,7 +127,7 @@ POST /api/chat
 | View | What it shows |
 |---|---|
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — two qualify for gifting, two do not, one exaggerates. |
-| **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Demo Brand, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / tag applied). No agent reasoning, tools or configuration is visible here. |
+| **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / tag applied). No agent reasoning, tools or configuration is visible here. |
 | **Agent logs** (`/logs`) | The full internal trace: intent classification, agent handoffs, verified profile lookups, criteria tables with pass/fail per rule, tool calls with arguments and results, guardrail blocks, per-call model/token/cost/latency, and the final reply. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration editor: gifting criteria, gifting catalog with SKUs, pitch criteria, classification labels and thresholds, ideal-profile targets, scoring weights, per-agent instructions and per-agent model selection. Form view plus a raw JSON editor and the live JSON schema. |
 
@@ -268,11 +272,11 @@ Shipped defaults produce:
 
 | Creator | Gifting | Pitch score | Label |
 |---|---|---|---|
-| Jessica Miller | ✅ approved | 99.0 | Excellent Match |
-| Sofia Ramirez | ✅ approved | 100.0 | Excellent Match |
-| Marcus Chen | ✅ approved | 46.0 | Moderate Match |
-| Aisha Patel | ❌ followers + revenue | 58.6 | Moderate Match |
-| Tyler Brooks | ❌ all criteria | 10.3 | Poor Match |
+| Kathryn Bigelow | ✅ approved | 99.0 | Excellent Match |
+| Sofia Coppola | ✅ approved | 100.0 | Excellent Match |
+| Martin Scorsese | ✅ approved | 46.0 | Moderate Match |
+| Paul Thomas Anderson | ❌ followers + revenue | 58.6 | Moderate Match |
+| Peter Bogdanovich | ❌ all criteria | 10.3 | Poor Match |
 
 Every save creates a new version. Events record the version in force, and `/api/config/schema`
 exposes the JSON schema for the raw editor.

@@ -106,7 +106,7 @@ async def test_scenario_3_pitch_applies_tag(client, use_fake_llm):
     response = await send(
         client,
         "creator_005",
-        "Hi Demo Brand! I'd love to partner with you on a skincare campaign. "
+        "Hi Summer Soft Skincare! I'd love to partner with you on a skincare campaign. "
         "Here's my pitch: three long-form reviews plus a routine series.",
     )
     assert response.status_code == 200, response.text
@@ -274,7 +274,7 @@ async def test_scenario_10_bad_tag_is_corrected(client, use_fake_llm):
     response = await send(
         client,
         "creator_005",
-        "I'd love to partner with Demo Brand on a launch campaign.",
+        "I'd love to partner with Summer Soft Skincare on a launch campaign.",
     )
     payload = response.json()
     assert payload["outcome"]["type"] == "tag_applied"
