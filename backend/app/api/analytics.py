@@ -179,5 +179,4 @@ async def analytics(
             }
             for bucket in _bucket_starts(start, today, interval)
         ],
-        "intent_labels": INTENT_LABELS,
     }
