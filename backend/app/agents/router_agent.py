@@ -1,4 +1,8 @@
-"""Routing agent: classify intent, then hand off to a specialist."""
+"""Intent agent: decide whether a message is an intent we have an agent for.
+
+There is exactly one specialist -- the gifting agent. Everything else is routed
+to the front desk, which is a responder rather than a specialist.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +15,6 @@ from . import prompts
 
 AGENT_FOR_INTENT = {
     "gift_request": "gift_request_agent",
-    "creator_pitch": "creator_pitch_agent",
     "general_inquiry": "general_handler",
 }
 
@@ -33,49 +36,17 @@ _GIFT_PATTERNS = (
     r"\bunbox(ing)?\b",
 )
 
-# Unambiguous gifting language -- wins when a message also sounds like a pitch.
-_STRONG_GIFT_PATTERNS = (
-    r"\bfree\b",
-    r"\bgift(s|ed|ing)?\b",
-    r"\bpr package\b",
-    r"\bsample(s)?\b",
-    r"\bcomplimentary\b",
-    r"\bseed(ed|ing)?\b",
-    r"\bunbox(ing)?\b",
-)
-
-_PITCH_PATTERNS = (
-    r"\bpartner(ship|ing)?\b",
-    r"\bcollab(orat\w*)?\b",
-    r"\bwork(ing)? together\b",
-    r"\bpitch\b",
-    r"\bmedia kit\b",
-    r"\baffiliate\b",
-    r"\bcampaign\b",
-    r"\bsponsor(ship|ed)?\b",
-    r"\bpromote\b",
-    r"\brepresent (your|the) brand\b",
-    r"\bpaid\b",
-)
-
-
 def _matches(text: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
 
 
-def keyword_intent(text: str) -> str | None:
-    """Deterministic fallback used when the router returns unusable JSON."""
-    gift = _matches(text, _GIFT_PATTERNS)
-    pitch = _matches(text, _PITCH_PATTERNS)
-    if gift and not pitch:
-        return "gift_request"
-    if pitch and not gift:
-        return "creator_pitch"
-    if gift and pitch:
-        # "Send me the serum and I'd love to partner" -> gifting; a pure pitch
-        # ("I'd love to partner on a campaign") stays a pitch.
-        return "gift_request" if _matches(text, _STRONG_GIFT_PATTERNS) else "creator_pitch"
-    return None
+def keyword_intent(text: str) -> str:
+    """Deterministic fallback used when the router returns unusable JSON.
+
+    With a single specialist agent the only question worth asking is whether the
+    message asks for product; everything else belongs to the front desk.
+    """
+    return "gift_request" if _matches(text, _GIFT_PATTERNS) else "general_inquiry"
 
 
 @dataclass
@@ -122,7 +93,7 @@ async def route(
     parsed = result.parsed or {}
     intent = parsed.get("intent")
     if intent not in AGENT_FOR_INTENT:
-        heuristic = keyword_intent(user_message) or "general_inquiry"
+        heuristic = keyword_intent(user_message)
         return RouteResult(
             intent=heuristic,
             confidence=0.3,

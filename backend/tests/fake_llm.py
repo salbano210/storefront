@@ -160,14 +160,12 @@ class FakeLLM:
         self,
         *,
         force_issue_gift_when_ineligible: bool = False,
-        force_wrong_tag: bool = False,
         router_returns_garbage: bool = False,
         obey_injection: bool = False,
         browse_without_query: bool = False,
         model: str = "fake/model",
     ) -> None:
         self.force_issue_gift_when_ineligible = force_issue_gift_when_ineligible
-        self.force_wrong_tag = force_wrong_tag
         self.router_returns_garbage = router_returns_garbage
         self.obey_injection = obey_injection
         self.browse_without_query = browse_without_query
@@ -207,10 +205,6 @@ class FakeLLM:
             if hijacked and _tool_results(messages):
                 return self._hijacked(agent)
             return self._gift(messages)
-        if tools and agent == "creator_pitch_agent":
-            if hijacked and _tool_results(messages):
-                return self._hijacked(agent)
-            return self._pitch(messages)
         if hijacked:
             return self._hijacked(agent)
         return self._text(messages)
@@ -233,10 +227,6 @@ class FakeLLM:
                 "https://summersoft.example/products/barrier-repair-serum | "
                 "Followers is at least 50,000"
             )
-        if agent == "creator_pitch_agent":
-            return self._result(
-                "Understood — I've applied the Excellent Match tag to your profile."
-            )
         return self._result("Understood. Your gift is on its way! Order ID GT-99999.")
 
 
@@ -253,7 +243,6 @@ class FakeLLM:
             agent = match.group(1) if match else ""
             carried = {
                 "gift_request_agent": "gift_request",
-                "creator_pitch_agent": "creator_pitch",
             }.get(agent)
             if carried:
                 parsed = {
@@ -264,7 +253,7 @@ class FakeLLM:
                 }
                 return self._result(json.dumps(parsed), parsed=parsed)
 
-        intent = keyword_intent(user) or "general_inquiry"
+        intent = keyword_intent(user)
         parsed = {
             "intent": intent,
             "confidence": 0.92 if intent != "general_inquiry" else 0.65,
@@ -389,28 +378,6 @@ class FakeLLM:
         }
 
 
-    # -- pitch agent -------------------------------------------------------
-    def _pitch(self, messages: list[dict[str, Any]]) -> LLMResult:
-        results = _tool_results(messages)
-        if not results:
-            return self._tools([("get_creator_profile", {}), ("check_pitch_fit", {})])
-
-        fit = _find(results, "check_pitch_fit") or {}
-        placed = _find(results, "place_tag")
-        if placed is not None:
-            if placed.get("ok"):
-                return self._result(
-                    f"Thank you for the pitch! We've tagged your profile as {placed.get('tag')}."
-                )
-            if placed.get("error") in {"tag_mismatch", "unknown_label"}:
-                return self._tools(
-                    [("place_tag", {"creator_id": fit.get("creator_id"), "tag": fit.get("label")})]
-                )
-            return self._result(f"I wasn't able to apply that tag. {placed.get('message', '')}")
-
-        tag = "Not a fit" if self.force_wrong_tag else fit.get("label")
-        return self._tools([("place_tag", {"creator_id": fit.get("creator_id"), "tag": tag})])
-
     # -- plain text --------------------------------------------------------
     def _text(self, messages: list[dict[str, Any]]) -> LLMResult:
         results = _tool_results(messages)
@@ -421,12 +388,10 @@ class FakeLLM:
                     f"Confirmed: order {issued.get('order_id')} for the {issued.get('product')}."
                 )
             return self._result(f"I can't approve that gift. {issued.get('message', '')}")
-        placed = _find(results, "place_tag")
-        if placed is not None and placed.get("ok"):
-            return self._result(f"Your profile has been tagged {placed.get('tag')}.")
         return self._result(
             "Summer Soft Skincare makes clinically-informed, fragrance-free skincare. "
-            "Would you like to request a gift or send over a partnership pitch?"
+            "Would you like to request a gift? We don't have an agent for partnership "
+            "pitches yet, so gifting is what I can act on today."
         )
 
     # -- helpers -----------------------------------------------------------

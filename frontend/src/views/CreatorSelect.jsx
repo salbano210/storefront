@@ -347,12 +347,13 @@ export default function CreatorSelect() {
         <h2>How the demo works</h2>
         <ol className="steps">
           <li>
-            <strong>Route.</strong> A routing agent classifies your message as a gifting request, a
-            partnership pitch, or a general question, then hands off to a specialist agent.
+            <strong>Route.</strong> An intent agent decides whether your message is something we
+            have an agent for. Gifting requests go to the gifting agent; everything else goes to
+            the front desk.
           </li>
           <li>
             <strong>Execute.</strong> The specialist calls real backend tools — verified profile
-            lookup, criteria evaluation, order placement, tagging — and every call is logged.
+            lookup, criteria evaluation, order placement — and every call is logged.
           </li>
           <li>
             <strong>Enforce.</strong> Eligibility maths, SKU checks and duplicate protection run in

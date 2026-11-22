@@ -94,7 +94,16 @@ curl -s https://<service>.onrender.com/api/creators | head -c 200
 
 # admin is gated
 curl -s -o /dev/null -w '%{http_code}\n' https://<service>.onrender.com/api/config   # expect 401
+
+# analytics answers, and defaults to your own (empty) session
+curl -s 'https://<service>.onrender.com/api/analytics?days=7&interval=day'
+
+# the metric registry still serves every gift-criteria metric
+curl -s https://<service>.onrender.com/api/config/metrics | head -c 200
 ```
+
+A redeploy reseeds the brand config, so the config version goes up. The bundled frontend
+and the API always ship together, so a mismatch there means the deploy is still in flight.
 
 Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable presenter flow:
 
@@ -108,8 +117,9 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
 4. `/admin` → **Gifting agent** → open **Barrier Repair Serum** → change its follower rule to 1,000 →
    **Save** → back to chat as **Paul Thomas Anderson** → he now clears eligibility, and the log shows
    `config v2`.
-5. `/admin` → **Pitch agent** → lower **Promising**'s threshold from 55 to 50 → pitch as
-   **Martin Scorsese** → he was rejected at 53.4, now he passes. Same creator, same data, one number.
+5. `/` → pick **Sofia Coppola** → pitch a partnership → the intent agent classifies it as
+   `general_inquiry`, the front desk answers, and no gifting tool runs. We have no partnership agent;
+   the demo says so rather than pretending. Then `/analytics` shows it counted as **Other**.
 6. Back as **Kathryn Bigelow**: ask for the serum, then answer with
    *"123 Example Street, Boston, MA 02111"* → the address is rejected, the agent offers `02110`, and
    nothing is ordered until she accepts the correction.

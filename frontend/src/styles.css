@@ -397,6 +397,10 @@ code,
   background: var(--slate-soft);
   color: var(--slate);
 }
+.badge-muted {
+  background: var(--cream-deep);
+  color: var(--muted);
+}
 .badge-coral {
   background: var(--coral-soft);
   color: var(--coral);
@@ -1345,76 +1349,173 @@ textarea {
   color: var(--muted);
 }
 
-.score {
-  margin: 12px 0;
+/* --- analytics ----------------------------------------------------------- */
+.analytics-card {
+  padding: 18px 20px 20px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow);
 }
 
-.score-head {
+.analytics-card > header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  margin-bottom: 18px;
 }
 
-.score-value {
-  font-family: var(--font-serif);
-  font-size: 34px;
-  font-weight: 600;
+.analytics-card h2 {
+  margin: 0;
+  font-size: 16px;
 }
 
-.score-label {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--sage-soft);
-  color: var(--sage);
+.analytics-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
   font-size: 12.5px;
-  font-weight: 650;
+  color: var(--ink-soft);
 }
 
-.score-scale {
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A stacked column chart. Segments are sized against the tallest bucket, so
+ * every column is drawn on the same scale. */
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 170px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chart-col {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 100%;
+}
+
+.chart-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.chart-seg {
+  display: block;
+  width: 100%;
+}
+
+.chart-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding-top: 5px;
+  font-size: 10.5px;
   color: var(--muted);
-  font-size: 12px;
+  white-space: nowrap;
 }
 
-.score-components {
+.seg-coral,
+.fill-coral {
+  background: var(--coral);
+}
+.seg-sage,
+.fill-sage {
+  background: var(--sage);
+}
+.seg-slate,
+.fill-slate {
+  background: var(--slate);
+}
+.seg-red,
+.fill-red {
+  background: var(--red);
+}
+.seg-muted,
+.fill-muted {
+  background: var(--line-strong);
+}
+
+.dot-coral {
+  background: var(--coral);
+}
+.dot-sage {
+  background: var(--sage);
+}
+.dot-slate {
+  background: var(--slate);
+}
+.dot-red {
+  background: var(--red);
+}
+.dot-muted {
+  background: var(--line-strong);
+}
+
+.disposition-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
 }
 
-.score-components li {
+.disposition-row {
   display: grid;
-  grid-template-columns: 150px 120px 70px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 10px minmax(150px, 210px) minmax(0, 1fr) 46px 58px;
+  gap: 12px;
   align-items: center;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
-.score-bar {
-  height: 6px;
+.disposition-name {
+  color: var(--ink-soft);
+}
+
+.disposition-bar {
+  height: 8px;
   border-radius: 999px;
   background: var(--cream-deep);
   overflow: hidden;
 }
 
-.score-fill {
+.disposition-fill {
   display: block;
   height: 100%;
-  background: var(--sage);
+  min-width: 2px;
 }
 
-.score-points {
-  color: var(--ink-soft);
+.disposition-count,
+.disposition-rate {
+  text-align: right;
 }
 
-.score-detail {
+.disposition-rate {
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.outcome-note {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+
+.outcome-note .chips {
+  margin: 8px 0 0;
 }
 
 /* --- json ---------------------------------------------------------------- */
@@ -2139,9 +2240,12 @@ textarea {
     white-space: normal;
   }
 
-  .score-components li {
-    grid-template-columns: 1fr;
-    gap: 3px;
+  .disposition-row {
+    grid-template-columns: 10px minmax(0, 1fr) 40px 52px;
+  }
+
+  .disposition-bar {
+    display: none;
   }
 }
 

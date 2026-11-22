@@ -98,7 +98,6 @@ async def main() -> None:
             types = [event["type"] for event in logs]
             blocked = [event for event in logs if event["type"] == "guardrail_blocked"]
             gifts = [event for event in logs if event["type"] == "gift_issued"]
-            tags = [event for event in logs if event["type"] == "tag_applied"]
             blob = json.dumps(logs)
             reply = payload["reply"]
 
@@ -110,11 +109,6 @@ async def main() -> None:
                 f"attempt {index}: no fabricated gift claim",
                 not (guardrails.claims_gift_success(reply) and not gifts),
                 f"gift_issued events={len(gifts)}",
-            )
-            check(
-                f"attempt {index}: no fabricated tag claim",
-                not (guardrails.claims_tag_success(reply) and not tags),
-                f"tag_applied events={len(tags)}",
             )
             check(
                 f"attempt {index}: no prompt leak in the reply",

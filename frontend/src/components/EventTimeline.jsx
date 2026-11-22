@@ -1,12 +1,11 @@
 import { formatters } from '../api'
-import { CriteriaTable, ScoreBreakdown } from './CriteriaTable.jsx'
+import { CriteriaTable } from './CriteriaTable.jsx'
 import { JsonBlock } from './ui.jsx'
 
 const AGENT_LABELS = {
-  router_agent: 'Router agent',
+  router_agent: 'Intent agent',
   gift_request_agent: 'Gift request agent',
-  creator_pitch_agent: 'Creator pitch agent',
-  general_handler: 'General handler',
+  general_handler: 'Front desk',
   admin: 'Admin',
   guard: 'Guard',
 }
@@ -14,7 +13,6 @@ const AGENT_LABELS = {
 const AGENT_TONES = {
   router_agent: 'slate',
   gift_request_agent: 'coral',
-  creator_pitch_agent: 'sage',
   general_handler: 'amber',
   admin: 'ink',
   guard: 'red',
@@ -32,7 +30,6 @@ const EVENT_TONES = {
   tool_call_failed: 'red',
   guardrail_blocked: 'red',
   guardrail_adjusted: 'amber',
-  tag_applied: 'sage',
   gift_issued: 'coral',
   message_sent: 'coral',
   llm_response: 'muted',
@@ -78,24 +75,6 @@ function Detail({ event }) {
     )
   }
 
-  if (event.type === 'criteria_evaluated' && payload.policy === 'pitch') {
-    return (
-      <>
-        <ScoreBreakdown
-          components={payload.components || []}
-          score={payload.score}
-          label={payload.label}
-        />
-        {payload.strengths?.length > 0 && (
-          <p className="detail-note ok">Strengths: {payload.strengths.join(' · ')}</p>
-        )}
-        {payload.concerns?.length > 0 && (
-          <p className="detail-note bad">Concerns: {payload.concerns.join(' · ')}</p>
-        )}
-      </>
-    )
-  }
-
   if (event.type === 'guardrail_blocked') {
     return (
       <div className="guardrail">
@@ -129,21 +108,6 @@ function Detail({ event }) {
         <div>
           <span className="receipt-key">Ship to</span>
           <span>{payload.shipping_address}</span>
-        </div>
-      </div>
-    )
-  }
-
-  if (event.type === 'tag_applied') {
-    return (
-      <div className="receipt">
-        <div>
-          <span className="receipt-key">Tag</span>
-          <span className="badge badge-sage">{payload.tag}</span>
-        </div>
-        <div>
-          <span className="receipt-key">Score</span>
-          <span className="mono">{payload.score}</span>
         </div>
       </div>
     )

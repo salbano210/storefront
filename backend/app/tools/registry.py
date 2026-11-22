@@ -1,7 +1,7 @@
 """Tool registry: schemas, validation and guarded execution.
 
 Every tool call is validated with Pydantic and logged. The side-effecting tools
-(``issue_gift``, ``place_tag``) re-run the deterministic rules themselves and
+(``issue_gift``) re-run the deterministic rules themselves and
 refuse to act when the rules are not satisfied -- an LLM cannot talk its way past
 them, and it cannot fabricate a successful order.
 """
@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import addresses
 from .. import evaluation
-from ..models import Conversation, GiftOrder, Session as SessionRow, TagApplied
+from ..models import GiftOrder, Session as SessionRow
 from ..schemas import BrandConfig, CreatorProfile
 from ..services import event_logger as events
 from ..services.event_logger import EventLogger
@@ -80,13 +80,6 @@ class ValidateAddressArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     address: str = Field(min_length=1, max_length=300)
-
-
-class PlaceTagArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    creator_id: str
-    tag: str
 
 
 def _fn(
@@ -194,27 +187,6 @@ TOOL_SCHEMAS: dict[str, dict] = {
         },
         required=["creator_name", "sku", "shipping_address"],
     ),
-    "check_pitch_fit": _fn(
-        "check_pitch_fit",
-        (
-            "Score the verified creator profile against the brand's ideal creator profile. Takes NO "
-            "arguments. Returns a 0-100 score, the resulting classification label, per-component "
-            "points, strengths and concerns. This is the authoritative classification -- never "
-            "invent your own, and never ask the creator for metrics."
-        ),
-    ),
-    "place_tag": _fn(
-        "place_tag",
-        (
-            "Apply a classification tag to the creator's brand relationship record. The tag must be "
-            "exactly the label returned by check_pitch_fit."
-        ),
-        properties={
-            "creator_id": {"type": "string", "description": "Verified creator id"},
-            "tag": {"type": "string", "description": "Label returned by check_pitch_fit"},
-        },
-        required=["creator_id", "tag"],
-    ),
 }
 
 AGENT_TOOLS: dict[str, list[str]] = {
@@ -225,7 +197,6 @@ AGENT_TOOLS: dict[str, list[str]] = {
         "validate_shipping_address",
         "issue_gift",
     ],
-    "creator_pitch_agent": ["get_creator_profile", "check_pitch_fit", "place_tag"],
     "general_handler": [],
 }
 
@@ -332,31 +303,6 @@ async def _check_gifting_eligibility(args: dict, ctx: ToolContext) -> dict:
         },
     )
     return _ok(**result)
-
-
-async def _check_pitch_fit(args: dict, ctx: ToolContext) -> dict:
-    result = evaluation.pitch_evaluation(ctx.creator, ctx.config)
-    await ctx.logger.log(
-        events.CRITERIA_EVALUATED,
-        agent=ctx.agent,
-        summary=f"Pitch fit score {result['score']} -> {result['label']} ({result['decision']})",
-        payload={
-            "policy": "pitch",
-            "score": result["score"],
-            "label": result["label"],
-            "decision": result["decision"],
-            "response_instructions": result["response_instructions"],
-            "allowed_labels": result["labels"],
-            "components": result["components"],
-            "total_weight": result["total_weight"],
-            "strengths": result["strengths"],
-            "concerns": result["concerns"],
-            "verified_profile_values": result["verified"],
-            "creator_stated_values_used": False,
-        },
-    )
-    return _ok(**result)
-
 
 
 def _normalise(value: str) -> str:
@@ -643,135 +589,6 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
 
 
 
-async def _place_tag(args: dict, ctx: ToolContext) -> dict:
-    profile = ctx.creator
-    creator_id = (args.get("creator_id") or "").strip()
-    tag = (args.get("tag") or "").strip()
-
-    if creator_id and creator_id != profile.id:
-        await ctx.logger.log(
-            events.GUARDRAIL_BLOCKED,
-            agent=ctx.agent,
-            status="blocked",
-            summary=f"Refused place_tag: creator mismatch ({creator_id})",
-            payload={"guardrail": "creator_mismatch", "attempted": creator_id, "expected": profile.id},
-        )
-        return _fail(
-            "creator_mismatch",
-            f"That creator id does not match this conversation. Use '{profile.id}'.",
-        )
-
-    allowed = [item.label for item in ctx.config.pitch.classification_labels]
-    if tag not in allowed:
-        await ctx.logger.log(
-            events.GUARDRAIL_BLOCKED,
-            agent=ctx.agent,
-            status="blocked",
-            summary=f"Refused place_tag: '{tag}' is not a configured label",
-            payload={"guardrail": "unknown_label", "attempted": tag, "allowed_labels": allowed},
-        )
-        return _fail(
-            "unknown_label",
-            f"'{tag}' is not a configured classification label. Allowed labels: {', '.join(allowed)}.",
-        )
-
-    fit = evaluation.pitch_evaluation(profile, ctx.config)
-    if tag != fit["label"]:
-        await ctx.logger.log(
-            events.GUARDRAIL_BLOCKED,
-            agent=ctx.agent,
-            status="blocked",
-            summary=f"Refused place_tag: '{tag}' does not match the computed label '{fit['label']}'",
-            payload={
-                "guardrail": "tag_mismatch",
-                "attempted": tag,
-                "expected": fit["label"],
-                "score": fit["score"],
-                "components": fit["components"],
-            },
-        )
-        return _fail(
-            "tag_mismatch",
-            f"check_pitch_fit scored this creator {fit['score']}/100, which maps to "
-            f"'{fit['label']}', not '{tag}'. Call place_tag again with exactly '{fit['label']}'.",
-        )
-
-    existing = await ctx.db.scalar(
-        select(TagApplied).where(
-            TagApplied.session_id == ctx.session_id,
-            TagApplied.creator_id == profile.id,
-            TagApplied.tag == tag,
-        )
-    )
-    if existing is not None:
-        await ctx.logger.log(
-            events.TOOL_CALL_COMPLETED,
-            agent=ctx.agent,
-            summary=f"Duplicate tag suppressed: '{tag}' already applied",
-            payload={
-                "tool": "place_tag",
-                "duplicate": True,
-                "tag": tag,
-                "decision": fit["decision"],
-                "applied_at": str(existing.created_at),
-            },
-        )
-        await _record_decision(ctx, fit["decision"])
-        return _ok(
-            duplicate=True,
-            tag=tag,
-            decision=fit["decision"],
-            score=fit["score"],
-            response_instructions=fit["response_instructions"],
-            message=f"'{tag}' was already applied to this creator; no duplicate tag was placed.",
-        )
-
-    await asyncio.sleep(MOCK_API_LATENCY_SECONDS)
-    ctx.db.add(
-        TagApplied(
-            session_id=ctx.session_id,
-            conversation_id=ctx.conversation_id,
-            creator_id=profile.id,
-            tag=tag,
-            decision=fit["decision"],
-            score=fit["score"],
-        )
-    )
-    await ctx.db.commit()
-    await _record_decision(ctx, fit["decision"])
-    await ctx.logger.log(
-        events.TAG_APPLIED,
-        agent=ctx.agent,
-        summary=f"Tag applied: '{tag}' (score {fit['score']}) -> decision '{fit['decision']}'",
-        payload={
-            "creator_id": profile.id,
-            "tag": tag,
-            "decision": fit["decision"],
-            "response_instructions": fit["response_instructions"],
-            "score": fit["score"],
-            "components": fit["components"],
-            "mock_api": "mock Storefront tag API",
-        },
-    )
-    return _ok(
-        duplicate=False,
-        tag=tag,
-        decision=fit["decision"],
-        score=fit["score"],
-        response_instructions=fit["response_instructions"],
-        message=f"Tag '{tag}' applied. Decision for this conversation: {fit['decision']}.",
-    )
-
-
-async def _record_decision(ctx: ToolContext, decision: str) -> None:
-    """Write the pass/reject decision onto the conversation itself."""
-    conversation = await ctx.db.get(Conversation, ctx.conversation_id)
-    if conversation is None:
-        return
-    conversation.decision = decision
-    await ctx.db.commit()
-
-
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -780,9 +597,7 @@ ARG_MODELS: dict[str, type[BaseModel]] = {
     "find_available_gifts": FindGiftsArgs,
     "check_gifting_eligibility": CheckEligibilityArgs,
     "validate_shipping_address": ValidateAddressArgs,
-    "check_pitch_fit": NoArgs,
     "issue_gift": IssueGiftArgs,
-    "place_tag": PlaceTagArgs,
 }
 
 EXECUTORS: dict[str, Any] = {
@@ -790,9 +605,7 @@ EXECUTORS: dict[str, Any] = {
     "find_available_gifts": _find_available_gifts,
     "check_gifting_eligibility": _check_gifting_eligibility,
     "validate_shipping_address": _validate_shipping_address,
-    "check_pitch_fit": _check_pitch_fit,
     "issue_gift": _issue_gift,
-    "place_tag": _place_tag,
 }
 
 

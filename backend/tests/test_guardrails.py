@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app import evaluation
 from app.db import AsyncSessionLocal
-from app.models import Conversation, Event, GiftOrder, TagApplied
+from app.models import Conversation, Event, GiftOrder
 from app.services import config_manager, data_store
 from app.tools.registry import execute_tool
 
@@ -293,67 +293,6 @@ async def test_validate_shipping_address_accepts_the_address_on_file(tool_contex
         assert result["normalised"] == "88 Harbor Avenue, Austin, TX 78701"
 
 
-async def test_place_tag_rejects_unconfigured_label(tool_context):
-    async with tool_context("creator_005", agent="creator_pitch_agent") as (ctx, _db):
-        result = await execute_tool(
-            "place_tag", {"creator_id": "creator_005", "tag": "Best Ever"}, ctx
-        )
-        assert result["ok"] is False
-        assert result["error"] == "unknown_label"
-
-
-async def test_place_tag_rejects_wrong_label_for_score(tool_context):
-    async with tool_context("creator_003", agent="creator_pitch_agent") as (ctx, _db):
-        result = await execute_tool(
-            "place_tag", {"creator_id": "creator_003", "tag": "Excellent Match"}, ctx
-        )
-        assert result["ok"] is False
-        assert result["error"] == "tag_mismatch"
-        assert "Promising" in result["message"]
-
-
-async def test_place_tag_rejects_creator_mismatch(tool_context):
-    async with tool_context("creator_005", agent="creator_pitch_agent") as (ctx, _db):
-        result = await execute_tool(
-            "place_tag", {"creator_id": "creator_001", "tag": "Excellent Match"}, ctx
-        )
-        assert result["ok"] is False
-        assert result["error"] == "creator_mismatch"
-
-
-async def test_place_tag_applies_computed_label(tool_context):
-    async with tool_context("creator_005", agent="creator_pitch_agent") as (ctx, db):
-        result = await execute_tool(
-            "place_tag", {"creator_id": "creator_005", "tag": "Excellent Match"}, ctx
-        )
-        assert result["ok"] is True
-        assert result["decision"] == "pass"
-        row = await db.scalar(select(TagApplied).where(TagApplied.session_id == ctx.session_id))
-        assert row is not None and row.tag == "Excellent Match"
-        assert row.decision == "pass"
-
-        # The decision lands on the conversation, not just the tag row.
-        conversation = await db.get(Conversation, ctx.conversation_id)
-        assert conversation is not None and conversation.decision == "pass"
-
-        rows = await _events(ctx.conversation_id, db)
-        assert any(item.type == "tag_applied" for item in rows)
-
-
-async def test_place_tag_records_a_reject_decision(tool_context):
-    """A 'Not a fit' tag must record a reject on the conversation."""
-    async with tool_context("creator_004", agent="creator_pitch_agent") as (ctx, db):
-        result = await execute_tool(
-            "place_tag", {"creator_id": "creator_004", "tag": "Not a fit"}, ctx
-        )
-        assert result["ok"] is True
-        assert result["decision"] == "reject"
-        assert result["response_instructions"]
-
-        conversation = await db.get(Conversation, ctx.conversation_id)
-        assert conversation is not None and conversation.decision == "reject"
-
-
 async def test_verified_profile_beats_creator_claims(tool_context):
     """Creator 004's story never reaches the decision: only the DB profile does."""
     async with tool_context("creator_004") as (ctx, _db):
@@ -440,40 +379,3 @@ async def test_gift_search_is_deterministic():
     assert evaluation.search_offers(config, "a leather jacket") == []
     # An empty query returns the whole catalog.
     assert len(evaluation.search_offers(config, "")) == len(config.gifting.offers)
-
-
-async def test_pitch_scores_produce_expected_labels():
-    config = config_manager.load_default_config()
-    expected = {
-        "creator_001": "Excellent Match",
-        "creator_002": "Not a fit",
-        "creator_003": "Promising",
-        "creator_004": "Not a fit",
-        "creator_005": "Excellent Match",
-    }
-    async with AsyncSessionLocal() as db:
-        for creator_id, label in expected.items():
-            profile = await data_store.get_creator(db, creator_id)
-            result = evaluation.pitch_evaluation(profile, config)
-            assert result["label"] == label, f"{creator_id} scored {result['score']}"
-            assert result["decision"] in {"pass", "reject"}
-
-
-async def test_martin_sits_just_below_the_pass_line():
-    """The demo lever: moving one threshold flips a decision."""
-    config = config_manager.load_default_config()
-    async with AsyncSessionLocal() as db:
-        profile = await data_store.get_creator(db, "creator_002")
-        before = evaluation.pitch_evaluation(profile, config)
-        assert before["decision"] == "reject"
-        assert before["score"] < 55
-
-        relaxed = config.model_copy(deep=True)
-        promising = next(
-            label for label in relaxed.pitch.classification_labels if label.label == "Promising"
-        )
-        promising.min_score = 50
-        after = evaluation.pitch_evaluation(profile, relaxed)
-        assert after["decision"] == "pass"
-        assert after["label"] == "Promising"
-

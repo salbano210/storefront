@@ -113,6 +113,9 @@ async def touch_conversation(
     pending_agent: str | None = None,
     config_version: int | None = None,
     clear_pending: bool = False,
+    intent: str | None = None,
+    disposition: str | None = None,
+    last_outcome: str | None = None,
 ) -> Conversation:
     if clear_pending:
         conversation.pending_agent = None
@@ -120,6 +123,12 @@ async def touch_conversation(
         conversation.pending_agent = pending_agent
     if config_version is not None:
         conversation.config_version = config_version
+    if intent is not None:
+        conversation.intent = intent
+    if disposition is not None:
+        conversation.disposition = disposition
+    if last_outcome is not None:
+        conversation.last_outcome = last_outcome
     conversation.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(conversation)

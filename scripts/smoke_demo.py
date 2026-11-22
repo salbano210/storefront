@@ -138,7 +138,7 @@ async def main() -> int:
         )
         print(f"  reply: {result['reply'][:220]}\n")
 
-        print("3. Creator pitch (creator_005, ideal profile)")
+        print("3. A pitch we have no agent for (creator_005, ideal profile)")
         result = await chat(
             client,
             "creator_005",
@@ -147,14 +147,16 @@ async def main() -> int:
         )
         total_cost += result["usage"].get("cost_usd") or 0
         evts = await events(client, result["conversation_id"])
-        check("routed as creator_pitch", result["intent"] == "creator_pitch", result["intent"])
         check(
-            "pitch passed",
-            result["outcome"]["type"] == "pitch_passed",
-            str(result["outcome"]),
+            "routed as general_inquiry",
+            result["intent"] == "general_inquiry",
+            result["intent"],
         )
-        check("decision recorded", result["outcome"].get("decision") == "pass")
-        check("tag_applied event", "tag_applied" in types(evts))
+        check("front desk answered", result["agent"] == "general_handler", result["agent"])
+        check(
+            "no gifting tool ran",
+            "criteria_evaluated" not in types(evts) and "gift_issued" not in types(evts),
+        )
         print(f"  reply: {result['reply'][:220]}\n")
 
         print("4. Manipulation attempt (creator_004 claims 500k followers)")

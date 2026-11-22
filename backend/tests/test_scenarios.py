@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db import AsyncSessionLocal
-from app.models import GiftOrder, TagApplied
+from app.models import Conversation, GiftOrder
 from app.services import config_manager, data_store
 from conftest import ADMIN_HEADERS
 
@@ -51,11 +51,11 @@ async def gift_order_count() -> int:
         return int(await db.scalar(select(func.count(GiftOrder.id))) or 0)
 
 
-async def tag_count(tag: str) -> int:
+async def conversation_row(conversation_id: str) -> Conversation:
     async with AsyncSessionLocal() as db:
-        return int(
-            await db.scalar(select(func.count(TagApplied.id)).where(TagApplied.tag == tag)) or 0
-        )
+        row = await db.get(Conversation, conversation_id)
+        assert row is not None
+        return row
 
 
 # ---------------------------------------------------------------------------
@@ -144,9 +144,10 @@ async def test_scenario_2_rejected_gifting(client, use_fake_llm):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3 -- successful creator pitch
+# Scenario 3 -- a partnership pitch is an intent we have no agent for
 # ---------------------------------------------------------------------------
-async def test_scenario_3_pitch_applies_tag(client, use_fake_llm):
+async def test_scenario_3_pitch_has_no_agent(client, use_fake_llm):
+    """The intent agent decides we can't action this, so the front desk takes it."""
     use_fake_llm()
     response = await send(
         client,
@@ -157,16 +158,17 @@ async def test_scenario_3_pitch_applies_tag(client, use_fake_llm):
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    assert payload["intent"] == "creator_pitch"
-    assert payload["agent"] == "creator_pitch_agent"
-    assert payload["outcome"]["type"] == "pitch_passed"
-    assert payload["outcome"]["decision"] == "pass"
-    assert payload["outcome"]["tag"] == "Excellent Match"
-    assert payload["outcome"]["score"] == pytest.approx(100.0)
+    assert payload["intent"] == "general_inquiry"
+    assert payload["agent"] == "general_handler"
+    assert payload["outcome"]["type"] == "inquiry"
 
-    types = [event["type"] for event in await events_for(client, payload["conversation_id"])]
-    assert "tag_applied" in types
-    assert await tag_count("Excellent Match") >= 1
+    events = await events_for(client, payload["conversation_id"])
+    # Nothing business-critical ran, and nothing was promised.
+    assert not any(event["type"] in {"gift_issued", "criteria_evaluated"} for event in events)
+
+    row = await conversation_row(payload["conversation_id"])
+    assert row.intent == "general_inquiry"
+    assert row.disposition == "other"
 
 
 # ---------------------------------------------------------------------------
@@ -320,28 +322,30 @@ async def test_scenario_9_general_inquiry_uses_no_tools(client, use_fake_llm):
     assert payload["outcome"]["type"] == "inquiry"
 
     events = await events_for(client, payload["conversation_id"])
-    assert not any(event["type"] in {"gift_issued", "tag_applied"} for event in events)
+    assert not any(event["type"] == "gift_issued" for event in events)
     assert all(call["tools"] == [] for call in fake.calls if call["agent"] == "general_handler")
 
 
 # ---------------------------------------------------------------------------
-# Scenario 10 -- a model that invents a label is corrected, then succeeds
+# Scenario 10 -- the recorded disposition follows the real outcome
 # ---------------------------------------------------------------------------
-async def test_scenario_10_bad_tag_is_corrected(client, use_fake_llm):
-    use_fake_llm(force_wrong_tag=True)
-    response = await send(
-        client,
-        "creator_005",
-        "I'd love to partner with Summer Soft Skincare on a launch campaign.",
-    )
-    payload = response.json()
-    assert payload["outcome"]["type"] == "pitch_passed"
-    assert payload["outcome"]["tag"] == "Excellent Match"
+async def test_scenario_10_disposition_follows_the_outcome(client, use_fake_llm):
+    """Analytics counts a refusal as a refusal, whatever the model's wording was."""
+    use_fake_llm()
 
-    events = await events_for(client, payload["conversation_id"])
-    blocked = [event for event in events if event["type"] == "guardrail_blocked"]
-    assert blocked and blocked[0]["payload"]["guardrail"] == "tag_mismatch"
-    assert any(event["type"] == "tag_applied" for event in events)
+    # creator_004 does not meet the serum's criteria.
+    denied = await request_gift(client, "creator_004", "Can I get the Barrier Repair Serum?")
+    assert denied["outcome"]["type"] == "gift_declined"
+    row = await conversation_row(denied["conversation_id"])
+    assert row.intent == "gift_request"
+    assert row.disposition == "gift_request_denied"
+    assert row.last_outcome == "gift_declined"
+
+    approved = await request_gift(client, "creator_001", "I'd love the Barrier Repair Serum")
+    assert approved["outcome"]["type"] == "gift_issued"
+    row = await conversation_row(approved["conversation_id"])
+    assert row.disposition == "gift_request_approved"
+    assert row.last_outcome == "gift_issued"
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +531,6 @@ async def test_awaiting_answer_is_decided_from_the_outcome():
     assert _awaiting_answer({"type": "gift_issued"}, gift_agent) is False
     assert _awaiting_answer({"type": "gift_declined", "alternatives": []}, gift_agent) is False
     assert _awaiting_answer({"type": "gift_suggested"}, gift_agent) is False
-    assert _awaiting_answer({"type": "pitch_passed"}, "creator_pitch_agent") is False
     # The general handler owns no task, so it never holds the conversation.
     assert _awaiting_answer({"type": "inquiry"}, "general_handler") is False
 

@@ -50,8 +50,13 @@ class Conversation(Base):
     creator_id: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(24), default="active")
     pending_agent: Mapped[str | None] = mapped_column(String(48), nullable=True)
-    # pass | reject -- set by the pitch agent's tag, surfaced in the chat and the logs.
-    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Denormalised for analytics: the latest intent the intent agent settled on and
+    # the disposition the conversation reached. Both are recomputed every turn.
+    intent: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    disposition: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # The raw turn outcome behind the disposition, kept so the dashboard can break
+    # the "other" bucket down instead of hiding it.
+    last_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
     config_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -106,19 +111,6 @@ class GiftOrder(Base):
     product_name: Mapped[str] = mapped_column(String(120))
     order_id: Mapped[str] = mapped_column(String(32))
     shipping_address: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class TagApplied(Base):
-    __tablename__ = "tags_applied"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(String(64), index=True)
-    conversation_id: Mapped[str] = mapped_column(String(64))
-    creator_id: Mapped[str] = mapped_column(String(64), index=True)
-    tag: Mapped[str] = mapped_column(String(64))
-    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    score: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

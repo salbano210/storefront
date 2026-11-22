@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { useSession } from '../session.jsx'
-import {
-  Field,
-  ModelsEditor,
-  ScoringRows,
-  Section,
-  TagRows,
-} from '../components/AdminFields.jsx'
+import { Field, ModelsEditor, Section } from '../components/AdminFields.jsx'
 import GiftRows from '../components/GiftRows.jsx'
 import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
 
@@ -20,9 +14,8 @@ function clone(value) {
 const TREE = [
   { id: 'brand', label: 'Brand', hint: 'name, positioning, tone' },
   { id: 'gifting', label: 'Gifting agent', group: 'Agents', hint: 'gifts and their criteria' },
-  { id: 'pitch', label: 'Pitch agent', group: 'Agents', hint: 'scoring, tags, follow-ups' },
-  { id: 'router', label: 'Router', group: 'Agents', hint: 'intent classification' },
-  { id: 'general_inquiry', label: 'General handler', group: 'Agents', hint: 'everything else' },
+  { id: 'router', label: 'Intent agent', group: 'Agents', hint: 'do we have an agent for this?' },
+  { id: 'general_inquiry', label: 'Front desk', group: 'Agents', hint: 'everything else' },
   { id: 'models', label: 'Models', hint: 'which model runs each agent' },
 ]
 
@@ -377,7 +370,7 @@ export default function AdminConfig() {
                     onChange={(event) => update(['brand', 'description'], event.target.value)}
                   />
                 </Field>
-                <Field label="Positioning" wide hint="Feeds the pitch agent's sense of brand fit.">
+                <Field label="Positioning" wide hint="Feeds the agents' sense of brand fit.">
                   <textarea
                     rows={3}
                     value={draft.brand.positioning}
@@ -423,56 +416,10 @@ export default function AdminConfig() {
               </>
             )}
 
-            {node === 'pitch' && (
-              <>
-                <Section
-                  title="Pitch agent"
-                  description="Scores every inbound pitch on the metrics you select, picks a tag by threshold, then follows that tag's instructions."
-                >
-                  <AgentFields
-                    agentKey="creator_pitch"
-                    agents={draft.agents}
-                    onChange={(value) => update(['agents'], value)}
-                  />
-                </Section>
-
-                <Section
-                  title="Scoring metrics"
-                  description="Only the metrics you tick here affect the score. Score = actual / ideal, capped, weighted, normalised to 0–100."
-                >
-                  <ScoringRows
-                    scoring={draft.pitch.scoring}
-                    metrics={metricCatalog.filter((metric) => metric.scorable)}
-                    onChange={(value) => update(['pitch', 'scoring'], value)}
-                  />
-                </Section>
-
-                <Section
-                  title="Tags and follow-ups"
-                  description="The score picks a tag; the tag decides pass or reject and what the agent says next."
-                >
-                  <TagRows
-                    labels={draft.pitch.classification_labels}
-                    onChange={(value) => update(['pitch', 'classification_labels'], value)}
-                  />
-                </Section>
-
-                <Section title="Notes" description="Free text for whoever maintains this config.">
-                  <Field label="Pitch notes" wide>
-                    <textarea
-                      rows={2}
-                      value={draft.pitch.notes || ''}
-                      onChange={(event) => update(['pitch', 'notes'], event.target.value)}
-                    />
-                  </Field>
-                </Section>
-              </>
-            )}
-
             {node === 'router' && (
               <Section
-                title="Routing agent"
-                description="Classifies the creator's intent and hands off. It never approves anything itself."
+                title="Intent agent"
+                description="Decides whether the creator's message is an intent we have an agent for. It never approves anything itself."
               >
                 <AgentFields
                   agentKey="router"
@@ -484,8 +431,8 @@ export default function AdminConfig() {
 
             {node === 'general_inquiry' && (
               <Section
-                title="General handler"
-                description="Everything that is not a gift request or a pitch. It has no business tools at all."
+                title="Front desk"
+                description="Everything we have no specialist agent for, including partnership pitches. It has no business tools at all."
               >
                 <AgentFields
                   agentKey="general_inquiry"
@@ -513,7 +460,7 @@ export default function AdminConfig() {
                 Saved configuration is versioned. Every log event records the version in force, so you
                 can prove which rules produced a decision. Defaults come from{' '}
                 <code>backend/app/data/brand_config.default.json</code>
-                {defaults && <> ({defaults.gifting.offers.length} gifts, {defaults.pitch.scoring.length} scoring metrics)</>}.
+                {defaults && <> ({defaults.gifting.offers.length} gifts)</>}.
               </p>
             </section>
           </div>

@@ -94,19 +94,6 @@ async def test_invalid_values_are_rejected(client):
         # 'gte' is meaningless for a list metric.
         config["gifting"]["offers"][2]["criteria"][1]["operator"] = "gte"
 
-    def _no_labels(config):
-        config["pitch"]["classification_labels"] = []
-
-    def _no_scoring(config):
-        config["pitch"]["scoring"] = []
-
-    def _zero_weights(config):
-        for item in config["pitch"]["scoring"]:
-            item["weight"] = 0
-
-    def _unscorable_metric(config):
-        config["pitch"]["scoring"][0]["metric"] = "audience_gender"
-
     def _bad_url(config):
         config["gifting"]["offers"][0]["url"] = "summersoft.example/serum"
 
@@ -116,10 +103,6 @@ async def test_invalid_values_are_rejected(client):
     assert await rejected(_no_offers) == 422
     assert await rejected(_unknown_metric) == 422
     assert await rejected(_wrong_operator) == 422
-    assert await rejected(_no_labels) == 422
-    assert await rejected(_no_scoring) == 422
-    assert await rejected(_zero_weights) == 422
-    assert await rejected(_unscorable_metric) == 422
     assert await rejected(_bad_url) == 422
 
 
@@ -175,7 +158,6 @@ async def test_stored_config_that_no_longer_validates_is_reseeded():
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.ensure_seeded(db)
         assert config.brand.name == "Summer Soft Skincare"
-        assert config.pitch.scoring[0].metric == "engagement_rate"
         assert config.gifting.offers[0].sku == "GT-SERUM-001"
         assert version > 1
 

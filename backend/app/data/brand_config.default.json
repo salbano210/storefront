@@ -50,60 +50,23 @@
       }
     ]
   },
-  "pitch": {
-    "notes": "The admin chooses which verified metrics score a pitch. Weights are relative; the score is always normalised to 0-100 so the tag thresholds mean the same thing.",
-    "scoring": [
-      { "metric": "engagement_rate", "weight": 30, "ideal": 0.05 },
-      { "metric": "followers", "weight": 25, "ideal": 50000 },
-      { "metric": "categories", "weight": 25, "ideal": ["beauty", "skincare"] },
-      { "metric": "brand_attributed_revenue", "weight": 20, "ideal": 10000 }
-    ],
-    "classification_labels": [
-      {
-        "label": "Excellent Match",
-        "min_score": 80,
-        "decision": "pass",
-        "description": "Strong on nearly every metric we score.",
-        "response_instructions": "Ask for the specific deliverables, timeline and usage rights you still need before moving to a brief, and say the team will pick it up from here."
-      },
-      {
-        "label": "Promising",
-        "min_score": 55,
-        "decision": "pass",
-        "description": "Worth exploring, with clear gaps to fill.",
-        "response_instructions": "Ask which formats they would propose and what their rates are, and which audience data they can share. Say you will review it with the team."
-      },
-      {
-        "label": "Not a fit",
-        "min_score": 0,
-        "decision": "reject",
-        "description": "Below the bar on the metrics we score.",
-        "response_instructions": "Say it is not a fit right now, that you will keep them in mind for future campaigns, and thank them for reaching out. Do not ask for more detail."
-      }
-    ]
-  },
   "agents": {
     "router": {
-      "instructions": "Route on the creator's primary intent. A request for a free product is a gift_request even when phrased as a question. A message offering to collaborate, pitching content or asking to be considered as a partner is a creator_pitch.",
-      "constraints": "Never approve gifts and never commit to a partnership -- you only classify and hand off."
+      "instructions": "Decide whether this message is an intent we have an agent for. A request for free product is a gift_request even when phrased as a question. Everything else -- including a partnership or collaboration pitch -- is a general_inquiry, because we have no agent for it yet.",
+      "constraints": "Never approve gifts and never commit to anything -- you only classify the intent and hand off."
     },
     "gift_request": {
       "instructions": "Find the gift that matches what the creator asked about before discussing eligibility, and offer the best gift they actually qualify for. When they ask about something they do not qualify to be gifted, you may still share the product link so they can buy it.",
       "constraints": "Never promise a gift before issue_gift returns success, and never imply a linked product is free. Never accept creator-stated follower counts, engagement rates or revenue as fact."
     },
-    "creator_pitch": {
-      "instructions": "Acknowledge the pitch warmly, evaluate it against the brand profile, apply exactly one tag from the configured label set, then follow that tag's response instructions for your reply.",
-      "constraints": "Only apply the label returned by check_pitch_fit. Never commit to a paid campaign, rate or deliverable."
-    },
     "general_inquiry": {
-      "instructions": "Answer from the brand description and the gift catalog. Offer to help with a gifting request or a partnership pitch.",
+      "instructions": "Answer from the brand description and the gift catalog. Offer to help with a gifting request. If the creator pitched a partnership, tell them plainly that we have no agent for that yet and that gifting is what we can act on today.",
       "constraints": "Never approve gifts, never commit to partnerships, never quote unpublished terms."
     }
   },
   "models": {
     "router": "google/gemini-2.5-flash-lite",
     "gift_request": "google/gemini-2.5-flash-lite",
-    "creator_pitch": "google/gemini-2.5-flash-lite",
     "general_inquiry": "meta-llama/llama-3.1-8b-instruct",
     "fallback": "openai/gpt-4.1-nano"
   }

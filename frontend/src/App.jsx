@@ -4,11 +4,13 @@ import { useSession } from './session.jsx'
 import CreatorSelect from './views/CreatorSelect.jsx'
 import CreatorChat from './views/CreatorChat.jsx'
 import AdminConfig from './views/AdminConfig.jsx'
+import Analytics from './views/Analytics.jsx'
 import Logs from './views/Logs.jsx'
 
 const NAV = [
   { to: '/', label: 'Creators', end: true },
   { to: '/chat', label: 'Creator chat' },
+  { to: '/analytics', label: 'Analytics' },
   { to: '/logs', label: 'Agent logs' },
   { to: '/admin', label: 'Brand admin' },
 ]
@@ -58,6 +60,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<CreatorSelect />} />
           <Route path="/chat" element={<CreatorChat />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/admin" element={<AdminConfig />} />
           <Route path="*" element={<Navigate to="/" replace />} />

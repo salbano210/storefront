@@ -76,8 +76,8 @@ async def _tool_context(
 ):
     """A real ToolContext, including a real conversation row.
 
-    The conversation exists because tools write to it (the pitch decision lands
-    there), so a context without one would not be representative.
+    The conversation exists because the tools and the orchestrator write to it,
+    so a context without one would not be representative.
     """
     async with AsyncSessionLocal() as db:
         version, config = await config_manager.get_current(db)

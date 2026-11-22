@@ -17,8 +17,6 @@ const OUTCOME_LABELS = {
   gift_declined: { tone: 'red', text: 'Not eligible' },
   gift_suggested: { tone: 'slate', text: 'Gift suggested' },
   details_required: { tone: 'amber', text: 'Details needed' },
-  pitch_passed: { tone: 'sage', text: 'Pitch passed' },
-  pitch_rejected: { tone: 'red', text: 'Pitch rejected' },
   inquiry: { tone: 'slate', text: 'Answered' },
 }
 
@@ -30,9 +28,6 @@ function outcomeFor(payload) {
   if (outcome.type === 'gift_issued') detail = `Order ${outcome.order_id}`
   if (outcome.type === 'gift_suggested') detail = outcome.product || ''
   if (outcome.type === 'details_required') detail = outcome.gift || 'delivery address'
-  if (outcome.type === 'pitch_passed' || outcome.type === 'pitch_rejected') {
-    detail = `${outcome.tag} · ${outcome.score}/100`
-  }
   if (outcome.type === 'gift_declined') {
     const failed = (outcome.failed_criteria || []).join(', ')
     const alternative = outcome.alternatives?.[0]?.name
@@ -193,8 +188,8 @@ export default function CreatorChat() {
             <div className="chat-intro">
               <p>
                 You're chatting with <strong>Summer Soft Skincare</strong> as{' '}
-                <strong>{creator?.name || creatorId}</strong>. Ask about a product, request a gift,
-                or pitch a partnership.
+                <strong>{creator?.name || creatorId}</strong>. Ask about a product or request a gift.
+                Partnership pitches go to the front desk — we have no agent for those yet.
               </p>
               <div className="quick-prompts">
                 {QUICK_PROMPTS.map((prompt) => (

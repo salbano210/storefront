@@ -6,7 +6,7 @@ what makes the demo trustworthy: a cheap model can never approve an ineligible
 creator, and changing a criterion in the admin UI provably changes outcomes.
 
 The conditions themselves live in the verified-metric registry (``metrics.py``).
-This module only applies them: to each gift offer, and to pitch scoring.
+This module only applies them: to each gift offer.
 """
 
 from __future__ import annotations
@@ -166,84 +166,3 @@ def search_offers(
         }
         for score, _index, offer, matched in ranked
     ]
-
-
-# ---------------------------------------------------------------------------
-# Pitch fit scoring
-# ---------------------------------------------------------------------------
-def _ratio(actual: float, ideal: float) -> float:
-    if ideal <= 0:
-        return 0.0
-    return max(0.0, min(1.0, actual / ideal))
-
-
-def _category_ratio(creator: CreatorProfile, ideal: list[str]) -> tuple[float, str]:
-    preferred = {str(item).lower() for item in ideal}
-    actual = {str(item).lower() for item in creator.categories}
-    overlap = sorted(preferred & actual)
-    if overlap:
-        return 1.0, f"matches {', '.join(overlap)}"
-    return 0.0, f"no overlap with {', '.join(sorted(preferred))}"
-
-
-def pitch_evaluation(creator: CreatorProfile, config: BrandConfig) -> dict[str, Any]:
-    """Score the creator on the metrics the admin selected, then pick a tag.
-
-    The score is always 0-100: component points are divided by the total
-    configured weight, so changing a weight changes the balance between metrics
-    without silently changing what the thresholds mean.
-    """
-    components: list[dict[str, Any]] = []
-    for item in config.pitch.scoring:
-        metric = metrics.get_metric(item.metric)
-        actual = metric.getter(creator)
-        if metric.shape == "list":
-            ratio, detail = _category_ratio(creator, item.ideal)
-        else:
-            ratio = _ratio(float(actual or 0), float(item.ideal))
-            detail = (
-                f"{metrics.fmt_value(metric, actual)} vs ideal "
-                f"{metrics.fmt_value(metric, item.ideal)}"
-            )
-        components.append(
-            {
-                "key": item.metric,
-                "metric": item.metric,
-                "label": metric.label,
-                "ratio": round(ratio, 4),
-                "weight": item.weight,
-                "points": round(ratio * item.weight, 2),
-                "ideal": item.ideal,
-                "ideal_display": metrics.fmt_value(metric, item.ideal),
-                "actual": actual,
-                "actual_display": metrics.fmt_value(metric, actual),
-                "detail": detail,
-            }
-        )
-
-    total_weight = sum(component["weight"] for component in components) or 1.0
-    score = round(sum(component["points"] for component in components) / total_weight * 100, 2)
-    label = config.pitch.label_for_score(score)
-
-    strengths = [f"{c['label']}: {c['detail']}" for c in components if c["ratio"] >= 0.8]
-    concerns = [f"{c['label']}: {c['detail']}" for c in components if c["ratio"] < 0.4]
-
-    return {
-        "score": score,
-        "label": label.label,
-        "decision": label.decision,
-        "response_instructions": label.response_instructions,
-        "labels": [item.label for item in config.pitch.classification_labels],
-        "components": components,
-        "strengths": strengths,
-        "concerns": concerns,
-        "total_weight": total_weight,
-        "creator_id": creator.id,
-        "verified": verified_values(creator),
-    }
-
-
-def label_for_score(score: float, config: BrandConfig) -> str:
-    """Highest configured label whose threshold the score reaches."""
-    return config.pitch.label_for_score(score).label
-

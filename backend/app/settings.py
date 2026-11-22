@@ -48,7 +48,6 @@ OPENROUTER_RETRY_BACKOFF_SECONDS = _env_float("OPENROUTER_RETRY_BACKOFF_SECONDS"
 DEFAULT_MODELS = {
     "router": _env("OPENROUTER_MODEL_ROUTER", "google/gemini-2.5-flash-lite"),
     "gift_request": _env("OPENROUTER_MODEL_GIFT_REQUEST", "google/gemini-2.5-flash-lite"),
-    "creator_pitch": _env("OPENROUTER_MODEL_CREATOR_PITCH", "google/gemini-2.5-flash-lite"),
     "general_inquiry": _env("OPENROUTER_MODEL_GENERAL_INQUIRY", "meta-llama/llama-3.1-8b-instruct"),
     "fallback": _env("OPENROUTER_MODEL_FALLBACK", "openai/gpt-4.1-nano"),
 }

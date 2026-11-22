@@ -30,7 +30,6 @@ TOOL_CALL_COMPLETED = "tool_call_completed"
 TOOL_CALL_FAILED = "tool_call_failed"
 GUARDRAIL_BLOCKED = "guardrail_blocked"
 GUARDRAIL_ADJUSTED = "guardrail_adjusted"
-TAG_APPLIED = "tag_applied"
 GIFT_ISSUED = "gift_issued"
 MESSAGE_SENT = "message_sent"
 LLM_REQUEST = "llm_request"
@@ -58,7 +57,6 @@ ALL_EVENT_TYPES = (
     TOOL_CALL_FAILED,
     GUARDRAIL_BLOCKED,
     GUARDRAIL_ADJUSTED,
-    TAG_APPLIED,
     GIFT_ISSUED,
     MESSAGE_SENT,
     LLM_REQUEST,

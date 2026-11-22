@@ -84,7 +84,6 @@ class Metric:
     kind: str  # number | percent | money | list | range | string
     getter: Callable[[Any], Any]
     description: str = ""
-    scorable: bool = True  # usable as a pitch-scoring input
     default_ideal: Any = None
     value_options: tuple[str, ...] = field(default=())
 
@@ -103,7 +102,6 @@ class Metric:
             "kind": self.kind,
             "shape": self.shape,
             "description": self.description,
-            "scorable": self.scorable,
             "default_ideal": self.default_ideal,
             "value_options": list(self.value_options),
             "operators": [
@@ -172,7 +170,6 @@ METRICS: tuple[Metric, ...] = (
         kind="range",
         getter=lambda p: getattr(p, "primary_age_range", "") or "",
         description="Dominant age band of the creator's audience.",
-        scorable=False,
         value_options=("18-24", "25-34", "35-44", "45+"),
     ),
     Metric(
@@ -181,15 +178,12 @@ METRICS: tuple[Metric, ...] = (
         kind="string",
         getter=lambda p: _audience(p).get("top_gender", "") or "",
         description="Gender the creator's audience skews towards.",
-        scorable=False,
         value_options=("female", "male", "mixed"),
     ),
 )
 
 METRICS_BY_KEY: dict[str, Metric] = {metric.key: metric for metric in METRICS}
 METRIC_KEYS: tuple[str, ...] = tuple(METRICS_BY_KEY)
-
-SCORABLE_METRICS: tuple[Metric, ...] = tuple(m for m in METRICS if m.scorable)
 
 
 def get_metric(key: str) -> Metric:

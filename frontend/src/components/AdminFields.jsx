@@ -145,153 +145,10 @@ export function ValueInput({ metric, operator, value, onChange }) {
   return <input value={value || ''} onChange={(event) => onChange(event.target.value)} />
 }
 
-export function ScoringRows({ scoring, metrics, onChange }) {
-  const included = new Map(scoring.map((item) => [item.metric, item]))
-  const total = scoring.reduce((sum, item) => sum + (Number(item.weight) || 0), 0)
-
-  function toggle(metric, on) {
-    if (on) {
-      onChange([
-        ...scoring,
-        { metric: metric.key, weight: 25, ideal: metric.default_ideal },
-      ])
-    } else {
-      onChange(scoring.filter((item) => item.metric !== metric.key))
-    }
-  }
-
-  function patch(key, next) {
-    onChange(scoring.map((item) => (item.metric === key ? { ...item, ...next } : item)))
-  }
-
-  return (
-    <div className="rows">
-      {metrics.map((metric) => {
-        const item = included.get(metric.key)
-        return (
-          <div className="row-card compact" key={metric.key}>
-            <Toggle
-              checked={Boolean(item)}
-              label={metric.label}
-              onChange={(value) => toggle(metric, value)}
-            />
-            {item && (
-              <>
-                <Field label="Weight">
-                  <NumberInput
-                    value={item.weight}
-                    min={0}
-                    max={100}
-                    onChange={(value) => patch(metric.key, { weight: value })}
-                  />
-                </Field>
-                <Field label="Ideal value" hint={metric.description}>
-                  <ValueInput
-                    metric={metric}
-                    operator={metric.shape === 'list' ? 'includes_any' : 'gte'}
-                    value={item.ideal}
-                    onChange={(value) => patch(metric.key, { ideal: value })}
-                  />
-                </Field>
-              </>
-            )}
-          </div>
-        )
-      })}
-      <p className="muted small">
-        Weights are relative: the score is always normalised to 0–100, so the tag thresholds below
-        keep their meaning whatever you select. Total weight {total}.
-      </p>
-    </div>
-  )
-}
-
-export function TagRows({ labels, onChange }) {
-  function patch(index, key, value) {
-    onChange(labels.map((item, i) => (i === index ? { ...item, [key]: value } : item)))
-  }
-
-  return (
-    <div className="rows">
-      {labels.map((label, index) => (
-        <div className="row-card" key={`${label.label}-${index}`}>
-          <Field label="Tag">
-            <input value={label.label} onChange={(e) => patch(index, 'label', e.target.value)} />
-          </Field>
-          <Field label="Minimum score">
-            <NumberInput
-              value={label.min_score}
-              min={0}
-              max={100}
-              onChange={(value) => patch(index, 'min_score', value)}
-            />
-          </Field>
-          <Field label="Decision" hint="Written onto the conversation.">
-            <select
-              value={label.decision}
-              onChange={(e) => patch(index, 'decision', e.target.value)}
-            >
-              <option value="pass">pass — move forward</option>
-              <option value="reject">reject — not a fit</option>
-            </select>
-          </Field>
-          <Field label="Internal note" wide>
-            <input
-              value={label.description || ''}
-              onChange={(e) => patch(index, 'description', e.target.value)}
-            />
-          </Field>
-          <Field
-            label="What the agent should say next"
-            wide
-            hint="Injected into the pitch agent's reply for this tag."
-          >
-            <textarea
-              rows={2}
-              value={label.response_instructions || ''}
-              onChange={(e) => patch(index, 'response_instructions', e.target.value)}
-            />
-          </Field>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm row-remove"
-            onClick={() => onChange(labels.filter((_, i) => i !== index))}
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() =>
-          onChange([
-            ...labels,
-            {
-              label: 'New tag',
-              min_score: 50,
-              decision: 'reject',
-              description: '',
-              response_instructions: '',
-            },
-          ])
-        }
-      >
-        + Add tag
-      </button>
-      <p className="muted small">
-        Tags are matched highest threshold first, and one must sit at 0 so every score lands
-        somewhere.
-      </p>
-    </div>
-  )
-}
-
 export function AgentEditor({ agents, onChange }) {
   const titles = {
     router: 'Routing agent',
     gift_request: 'Gift request agent',
-    creator_pitch: 'Creator pitch agent',
     general_inquiry: 'General inquiry handler',
   }
   return (
@@ -324,7 +181,7 @@ export function AgentEditor({ agents, onChange }) {
 }
 
 export function ModelsEditor({ models, catalog, onChange }) {
-  const keys = ['router', 'gift_request', 'creator_pitch', 'general_inquiry', 'fallback']
+  const keys = ['router', 'gift_request', 'general_inquiry', 'fallback']
   const recommended = catalog.filter((model) => model.recommended)
   const options = recommended.length ? recommended : catalog
   return (

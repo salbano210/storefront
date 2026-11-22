@@ -26,31 +26,3 @@ export function CriteriaTable({ checks = [] }) {
   )
 }
 
-export function ScoreBreakdown({ components = [], score, label }) {
-  return (
-    <div className="score">
-      <div className="score-head">
-        <span className="score-value">{score}</span>
-        <span className="score-label">{label}</span>
-        <span className="score-scale">/ 100</span>
-      </div>
-      <ul className="score-components">
-        {components.map((component) => (
-          <li key={component.key}>
-            <span className="score-name">{component.label}</span>
-            <span className="score-bar">
-              <span
-                className="score-fill"
-                style={{ width: `${Math.round((component.ratio || 0) * 100)}%` }}
-              />
-            </span>
-            <span className="score-points mono">
-              {component.points}/{component.weight}
-            </span>
-            <span className="score-detail">{component.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}

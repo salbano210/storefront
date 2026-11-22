@@ -29,14 +29,32 @@ TERMINAL_OUTCOMES = {
     "gift_duplicate",
     "gift_declined",
     "gift_suggested",
-    "pitch_passed",
-    "pitch_rejected",
 }
 
 # Agents that own a task. When one of these has not finished, the conversation is
 # still theirs -- so the creator's next message resumes it rather than being
 # re-routed from scratch.
-TASK_AGENTS = {"gift_request_agent", "creator_pitch_agent"}
+TASK_AGENTS = {"gift_request_agent"}
+
+# ---------------------------------------------------------------------------
+# Analytics vocabulary
+# ---------------------------------------------------------------------------
+# The three dispositions the dashboard reports. A conversation counts as approved
+# or denied only when a gifting decision actually landed; everything else --
+# questions, browsing, and conversations still collecting details -- is "other".
+# The raw outcome type is kept on the event log, so "other" can be broken down.
+DISPOSITION_BY_OUTCOME = {
+    "gift_issued": "gift_request_approved",
+    "gift_duplicate": "gift_request_approved",
+    "gift_declined": "gift_request_denied",
+}
+
+DISPOSITIONS = ("gift_request_approved", "gift_request_denied", "other")
+
+
+def disposition_for(outcome_type: str) -> str:
+    """Map a turn outcome onto one of the three reported dispositions."""
+    return DISPOSITION_BY_OUTCOME.get(outcome_type, "other")
 
 
 def _awaiting_answer(outcome: dict[str, Any], target_agent: str) -> bool:
@@ -213,57 +231,46 @@ def _extract_outcome(
             "sku": gift.get("sku"),
         }
     else:
-        tag = run.any_ok("place_tag")
-        if tag:
-            decision = tag.get("decision") or "reject"
+        requested = _requested_offer(
+            run, creator=creator, config=config, continuation=continuation
+        )
+        if requested is not None and not requested["eligible"]:
+            # Alternatives are a fact about the creator and the config, not
+            # about which tools the model happened to call.
+            sweep = evaluation.evaluate_gifting(creator, config)
             outcome = {
-                "type": "pitch_passed" if decision == "pass" else "pitch_rejected",
-                "decision": decision,
-                "tag": tag.get("tag"),
-                "score": tag.get("score"),
-                "duplicate": bool(tag.get("duplicate")),
+                "type": "gift_declined",
+                "gift": requested["name"],
+                "gift_id": requested["gift_id"],
+                "failed_criteria": requested["failed_labels"],
+                "shortfalls": requested["shortfalls"],
+                "alternatives": [
+                    {"name": item["name"], "url": item["url"]}
+                    for item in sweep["eligible_offers"]
+                ],
+            }
+        elif requested is not None:
+            # They qualify for the gift they asked about, but nothing was
+            # ordered: the turn is still collecting what the order needs, which
+            # is usually the delivery address.
+            outcome = {
+                "type": "details_required",
+                "gift": requested["name"],
+                "gift_id": requested["gift_id"],
+                "address_on_file": (creator.shipping_address or "").strip() or None,
             }
         else:
-            requested = _requested_offer(
-                run, creator=creator, config=config, continuation=continuation
-            )
-            if requested is not None and not requested["eligible"]:
-                # Alternatives are a fact about the creator and the config, not
-                # about which tools the model happened to call.
-                sweep = evaluation.evaluate_gifting(creator, config)
+            suggested = _suggested_gift(run)
+            if suggested is not None:
                 outcome = {
-                    "type": "gift_declined",
-                    "gift": requested["name"],
-                    "gift_id": requested["gift_id"],
-                    "failed_criteria": requested["failed_labels"],
-                    "shortfalls": requested["shortfalls"],
-                    "alternatives": [
-                        {"name": item["name"], "url": item["url"]}
-                        for item in sweep["eligible_offers"]
-                    ],
-                }
-            elif requested is not None:
-                # They qualify for the gift they asked about, but nothing was
-                # ordered: the turn is still collecting what the order needs, which
-                # is usually the delivery address.
-                outcome = {
-                    "type": "details_required",
-                    "gift": requested["name"],
-                    "gift_id": requested["gift_id"],
-                    "address_on_file": (creator.shipping_address or "").strip() or None,
+                    "type": "gift_suggested",
+                    "product": suggested.get("name"),
+                    "sku": suggested.get("sku"),
+                    "url": suggested.get("url"),
+                    "eligible": suggested.get("eligible"),
                 }
             else:
-                suggested = _suggested_gift(run)
-                if suggested is not None:
-                    outcome = {
-                        "type": "gift_suggested",
-                        "product": suggested.get("name"),
-                        "sku": suggested.get("sku"),
-                        "url": suggested.get("url"),
-                        "eligible": suggested.get("eligible"),
-                    }
-                else:
-                    outcome = {"type": "inquiry", "agent": target_agent}
+                outcome = {"type": "inquiry", "agent": target_agent}
 
     if blocks:
         outcome["guardrail_blocks"] = blocks
@@ -405,18 +412,6 @@ async def handle_turn(
             config=config,
             creator=creator,
         )
-    elif target_agent == "creator_pitch_agent":
-        run = await tool_agent.run_tool_agent(
-            llm,
-            agent_name=target_agent,
-            model=config.models.creator_pitch,
-            system=prompts.pitch_prompt(config, creator),
-            history=history,
-            user_message=user_message,
-            ctx=ctx,
-            config=config,
-            creator=creator,
-        )
     else:
         text = await general_handler.run_general(
             llm,
@@ -446,11 +441,6 @@ async def handle_turn(
         eligibility=(
             evaluation.evaluate_gifting(creator, config)
             if target_agent == "gift_request_agent"
-            else None
-        ),
-        fit=(
-            evaluation.pitch_evaluation(creator, config)
-            if target_agent == "creator_pitch_agent"
             else None
         ),
     )
@@ -493,7 +483,15 @@ async def handle_turn(
 
     usage = await _turn_usage(db, conversation.id, start_id)
     await store.touch_conversation(
-        db, conversation, pending_agent=pending, clear_pending=pending is None
+        db,
+        conversation,
+        pending_agent=pending,
+        clear_pending=pending is None,
+        # Denormalised so the analytics tab is a plain GROUP BY rather than a
+        # replay of the event log. Both reflect the conversation's latest turn.
+        intent=route_result.intent,
+        disposition=disposition_for(outcome["type"]),
+        last_outcome=outcome["type"],
     )
 
     return TurnResult(

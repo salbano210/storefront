@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__, settings
-from .api import chat, config, creators, logs, meta, session
+from .api import analytics, chat, config, creators, logs, meta, session
 from .bootstrap import bootstrap
 from .db import AsyncSessionLocal, init_db
 from .services import conversation_store as store
@@ -74,6 +74,7 @@ app.include_router(creators.router)
 app.include_router(chat.router)
 app.include_router(config.router)
 app.include_router(logs.router)
+app.include_router(analytics.router)
 
 
 # --- SPA hosting -----------------------------------------------------------

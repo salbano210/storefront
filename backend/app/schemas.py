@@ -13,10 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from . import metrics
 
-Intent = Literal["gift_request", "creator_pitch", "general_inquiry"]
-Decision = Literal["pass", "reject"]
+# The intent agent decides whether a message is something we have an agent for.
+# There is one specialist (gifting) plus the front desk that answers the rest.
+Intent = Literal["gift_request", "general_inquiry"]
 
-AGENT_KEYS = ("router", "gift_request", "creator_pitch", "general_inquiry")
+AGENT_KEYS = ("router", "gift_request", "general_inquiry")
 
 
 # ---------------------------------------------------------------------------
@@ -147,93 +148,6 @@ class GiftingConfig(BaseModel):
         return self.resolve(sku)
 
 
-class PitchScoringInput(BaseModel):
-    """One metric the brand chooses to score pitches on, with its ideal value.
-
-    Component score = actual / ideal, capped at 1, then multiplied by the weight.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    metric: str = Field(min_length=1, max_length=48)
-    weight: float = Field(0, ge=0, le=100)
-    ideal: Any = None
-
-    @model_validator(mode="after")
-    def _validate_against_registry(self) -> "PitchScoringInput":
-        metric = metrics.get_metric(self.metric)
-        if not metric.scorable:
-            raise ValueError(
-                f"'{metric.key}' cannot be used for scoring -- pick a numeric metric "
-                f"or 'categories'"
-            )
-        if self.ideal is None:
-            self.ideal = metric.default_ideal
-        if self.ideal is None:
-            raise ValueError(f"'{metric.key}' needs an ideal value")
-        # An ideal is a value of the metric's own shape, so the rule validator applies.
-        operator = "includes_any" if metric.shape == "list" else "gte"
-        metrics.validate_rule(metric.key, operator, self.ideal)
-        self.ideal = metrics.normalise_value(metric, self.ideal)
-        return self
-
-
-class ClassificationLabel(BaseModel):
-    """A tag the pitch agent can apply -- and what that tag *means*.
-
-    The tag is chosen by score threshold, never by the model. The decision it
-    carries is written onto the conversation, and ``response_instructions`` tells
-    the agent how to follow up (ask for more detail on a pass, let them down
-    gently on a reject).
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    label: str = Field(min_length=1, max_length=64)
-    min_score: float = Field(0, ge=0, le=100)
-    decision: Decision = "reject"
-    response_instructions: str = Field("", max_length=1000)
-    description: str = Field("", max_length=300)
-
-
-class PitchConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    scoring: list[PitchScoringInput] = Field(default_factory=list)
-    classification_labels: list[ClassificationLabel] = Field(default_factory=list)
-    notes: str = Field("", max_length=600)
-
-    @model_validator(mode="after")
-    def _validate_pitch(self) -> "PitchConfig":
-        if not self.scoring:
-            raise ValueError("select at least one metric to score pitches on")
-        keys = [item.metric for item in self.scoring]
-        if len(keys) != len(set(keys)):
-            raise ValueError("scoring metrics must be unique")
-        if sum(item.weight for item in self.scoring) <= 0:
-            raise ValueError("scoring weights must sum to a positive number")
-
-        labels = [item.label for item in self.classification_labels]
-        if not labels:
-            raise ValueError("classification_labels cannot be empty")
-        if len(labels) != len(set(labels)):
-            raise ValueError("classification_labels must be unique")
-        # Highest threshold first so label lookup is a simple scan.
-        self.classification_labels = sorted(
-            self.classification_labels, key=lambda item: item.min_score, reverse=True
-        )
-        if min(item.min_score for item in self.classification_labels) > 0:
-            raise ValueError("one classification label must have min_score 0 (the fallback)")
-        return self
-
-    def label_for_score(self, score: float) -> ClassificationLabel:
-        """Highest configured label whose threshold the score reaches."""
-        for item in self.classification_labels:
-            if score >= item.min_score:
-                return item
-        return self.classification_labels[-1]
-
-
 class AgentInstruction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -246,7 +160,6 @@ class AgentsConfig(BaseModel):
 
     router: AgentInstruction = Field(default_factory=AgentInstruction)
     gift_request: AgentInstruction = Field(default_factory=AgentInstruction)
-    creator_pitch: AgentInstruction = Field(default_factory=AgentInstruction)
     general_inquiry: AgentInstruction = Field(default_factory=AgentInstruction)
 
 
@@ -255,7 +168,6 @@ class ModelsConfig(BaseModel):
 
     router: str = Field("google/gemini-2.5-flash-lite", min_length=3)
     gift_request: str = Field("google/gemini-2.5-flash-lite", min_length=3)
-    creator_pitch: str = Field("google/gemini-2.5-flash-lite", min_length=3)
     general_inquiry: str = Field("meta-llama/llama-3.1-8b-instruct", min_length=3)
     fallback: str = Field("openai/gpt-4.1-nano", min_length=3)
 
@@ -267,7 +179,6 @@ class BrandConfig(BaseModel):
 
     brand: BrandInfo = Field(default_factory=BrandInfo)
     gifting: GiftingConfig = Field(default_factory=GiftingConfig)
-    pitch: PitchConfig = Field(default_factory=PitchConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
 

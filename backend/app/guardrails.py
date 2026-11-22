@@ -69,15 +69,12 @@ PROMPT_LEAK_MARKERS: tuple[str, ...] = (
     "hard rules",
     "workflow (follow it in order)",
     "gift offers (sku",
-    "pitch scoring (the metrics",
-    "classification tags (tag",
     "brand admin instructions",
     "brand admin constraints",
     "creator in this conversation (id, verified)",
     "you are the gifting agent",
-    "you are the creator partnership agent",
     "you are the front desk",
-    "you are the routing agent",
+    "you are the intent agent",
     "what you must not do",
     "untrusted input",
     "the creator is already identified",
@@ -94,15 +91,6 @@ GIFT_CLAIM_PATTERNS: tuple[str, ...] = (
     r"\bgift is approved\b",
     r"\bapproved (your|the) gift\b",
 )
-
-TAG_CLAIM_PATTERNS: tuple[str, ...] = (
-    r"\bi'?ve applied\b[^.]{0,40}\btag\b",
-    r"\btag\b[^.]{0,20}\bhas been applied\b",
-    r"\b(you'?ve|we'?ve|your profile has)\s+been tagged\b",
-    r"\bi'?ve tagged\b",
-    r"\btagged your profile\b",
-)
-
 
 def detect_injection(text: str) -> list[str]:
     """Names of the instruction-override patterns present in the message."""
@@ -131,10 +119,6 @@ def _matches(text: str, patterns: Sequence[str]) -> str | None:
 
 def claims_gift_success(text: str) -> str | None:
     return _matches(text, GIFT_CLAIM_PATTERNS)
-
-
-def claims_tag_success(text: str) -> str | None:
-    return _matches(text, TAG_CLAIM_PATTERNS)
 
 
 # --- truthful replacements -------------------------------------------------
@@ -199,30 +183,9 @@ def truthful_gift_reply(records: Sequence[Any], *, eligibility: dict[str, Any] |
     )
 
 
-def truthful_pitch_reply(records: Sequence[Any], *, fit: dict[str, Any] | None = None) -> str:
-    """A truthful pitch reply built from the fit evaluation and its decision."""
-    result = _last_ok(records, "check_pitch_fit") or fit
-    if result:
-        if result.get("decision") == "reject":
-            return (
-                "Thanks for the pitch. Against our verified profile data it isn't a fit right now "
-                "— we'll keep you in mind for future campaigns. Thanks for thinking of us."
-            )
-        return (
-            f"Thanks for the pitch. Your verified profile scores {result.get('score')}/100 against "
-            f'our ideal creator profile, which we classify as "{result.get("label")}". '
-            "We'd like to take this further — could you share the deliverables and timeline you "
-            "have in mind?"
-        )
-    return (
-        "Thanks for the pitch. I've reviewed it, but I couldn't complete the classification. "
-        "The team will follow up."
-    )
-
-
 SAFE_REFUSAL = (
     "I can't share my internal instructions or configuration. I'm happy to help with a gifting "
-    "request, a partnership pitch, or questions about our products."
+    "request or with questions about our products."
 )
 
 
@@ -243,7 +206,6 @@ def inspect_reply(
     records: Sequence[Any],
     agent: str,
     eligibility: dict[str, Any] | None = None,
-    fit: dict[str, Any] | None = None,
 ) -> ReplyVerdict:
     """Check an agent's final reply against what the tools actually did."""
     leak = find_prompt_leak(text)
@@ -264,17 +226,6 @@ def inspect_reply(
                 guardrail="ungrounded_gift_claim",
                 summary="Reply withheld: it claimed a gift outcome no tool produced",
                 replacement=truthful_gift_reply(records, eligibility=eligibility),
-                details={"matched_pattern": matched, "agent": agent, "claimed_reply": text[:600]},
-            )
-
-    if not _last_ok(records, "place_tag"):
-        matched = claims_tag_success(text)
-        if matched:
-            return ReplyVerdict(
-                replaced=True,
-                guardrail="ungrounded_tag_claim",
-                summary="Reply withheld: it claimed a tag that was never applied",
-                replacement=truthful_pitch_reply(records, fit=fit),
                 details={"matched_pattern": matched, "agent": agent, "claimed_reply": text[:600]},
             )
 

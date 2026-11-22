@@ -21,7 +21,6 @@ FALLBACK_REPLY = (
 # nudges them (with tool_choice="required") until the tools have been called.
 REQUIRED_TOOLS: dict[str, tuple[str, ...]] = {
     "gift_request_agent": ("get_creator_profile", "check_gifting_eligibility"),
-    "creator_pitch_agent": ("get_creator_profile", "check_pitch_fit", "place_tag"),
 }
 
 

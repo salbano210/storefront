@@ -13,8 +13,6 @@ export const OUTCOMES = {
   gift_declined: { tone: 'red', icon: '✕', label: 'Gift declined' },
   gift_suggested: { tone: 'slate', icon: '🔗', label: 'Product link shared' },
   details_required: { tone: 'amber', icon: '…', label: 'Eligible — more details needed' },
-  pitch_passed: { tone: 'sage', icon: '✓', label: 'Pitch passed' },
-  pitch_rejected: { tone: 'red', icon: '✕', label: 'Pitch rejected' },
   inquiry: { tone: 'slate', icon: '💬', label: 'Answered' },
 }
 
@@ -32,15 +30,13 @@ export const STEP_ICONS = {
   guardrail_adjusted: '✎',
   injection_suspected: '⚠',
   gift_issued: '🎁',
-  tag_applied: '🏷',
   budget_blocked: '⛔',
 }
 
 const AGENT_LABELS = {
-  router_agent: 'router',
+  router_agent: 'intent agent',
   gift_request_agent: 'gifting agent',
-  creator_pitch_agent: 'pitch agent',
-  general_handler: 'general handler',
+  general_handler: 'front desk',
 }
 
 export function humanAgent(agent) {
@@ -105,15 +101,6 @@ export function toolSentence(name, args, result, event) {
             meta: `${result.order_id} · to ${result.shipping_address}`,
           }
         : { text: 'The order was refused', meta: result.message || result.error }
-    case 'check_pitch_fit':
-      return {
-        text: `Scored the pitch — ${result.score}/100`,
-        meta: `${result.label} · decision ${result.decision}`,
-      }
-    case 'place_tag':
-      return result.ok
-        ? { text: `Applied the tag “${result.tag}”`, meta: `decision ${result.decision}` }
-        : { text: 'The tag was refused', meta: result.message || result.error }
     default:
       return { text: `${name}()`, meta: failure }
   }
@@ -153,12 +140,6 @@ export function stepSentence(event) {
     }
   }
   if (event.type === 'criteria_evaluated') {
-    if (payload.policy === 'pitch') {
-      return {
-        text: `Scored the pitch against the brand's ideal creator — ${payload.score}/100`,
-        meta: `${payload.label} · decision ${payload.decision}`,
-      }
-    }
     const offers = payload.offers || []
     const single = offers.length === 1 ? offers[0] : null
     if (single) {
@@ -191,12 +172,6 @@ export function stepSentence(event) {
       meta: `${payload.order_id} · to ${payload.shipping_address}${
         payload.address_changed ? ' · address changed' : ''
       }`,
-    }
-  }
-  if (event.type === 'tag_applied') {
-    return {
-      text: `Tagged the relationship as “${payload.tag}”`,
-      meta: `score ${payload.score}/100 · decision ${payload.decision}`,
     }
   }
   if (event.type === 'guardrail_blocked') {
@@ -251,10 +226,8 @@ export function stepSentence(event) {
 const COVERED_BY = {
   get_creator_profile: 'profile_lookup',
   check_gifting_eligibility: 'criteria_evaluated',
-  check_pitch_fit: 'criteria_evaluated',
   validate_shipping_address: 'address_validated',
   issue_gift: 'gift_issued',
-  place_tag: 'tag_applied',
 }
 
 export function dedupe(steps) {

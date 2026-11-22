@@ -87,17 +87,6 @@ async def update_config(
                 }
                 for offer in config.gifting.offers
             ],
-            "pitch_scoring": [
-                {
-                    "metric": item.metric,
-                    "weight": item.weight,
-                    "ideal": item.ideal,
-                }
-                for item in config.pitch.scoring
-            ],
-            "classification_labels": [
-                item.model_dump() for item in config.pitch.classification_labels
-            ],
             "models": config.models.model_dump(),
         },
     )

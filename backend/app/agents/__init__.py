@@ -1,1 +1,1 @@
-"""Agents: routing, gifting, pitch and general inquiry."""
+"""Agents: intent routing, gifting and the front desk."""
