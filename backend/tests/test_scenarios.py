@@ -476,7 +476,7 @@ async def test_decline_requires_an_actual_request():
 
 
 async def test_the_requested_gift_survives_a_follow_up_turn():
-    """A later turn that skips the eligibility tool still knows what was asked for.
+    """A later turn that skips the search still knows what was asked for.
 
     Without this, confirming the delivery address is reported as a plain answer
     instead of "eligible, waiting on the address".
@@ -489,24 +489,26 @@ async def test_the_requested_gift_survives_a_follow_up_turn():
         creator = await data_store.get_creator(db, "creator_001")
     assert creator is not None
 
-    run = AgentRun(
+    # A follow-up turn: no search, just a re-check of the gift in question.
+    follow_up = AgentRun(
         text="",
         tool_calls=[
             ToolCallRecord(
-                "find_available_gifts",
-                {"query": "Barrier Repair Serum"},
-                {
-                    "ok": True,
-                    "query": "Barrier Repair Serum",
-                    "gifts": [{"gift_id": "barrier-repair-serum", "name": "Barrier Repair Serum"}],
-                },
+                "check_gifting_eligibility",
+                {"gift_id": "barrier-repair-serum"},
+                {"ok": True, "selected": "barrier-repair-serum", "offers": []},
             )
         ],
     )
-    requested = _requested_offer(run, creator=creator, config=config)
+    requested = _requested_offer(
+        follow_up, creator=creator, config=config, continuation=True
+    )
     assert requested is not None
     assert requested["gift_id"] == "barrier-repair-serum"
     assert requested["eligible"] is True
+
+    # The same trace on a fresh turn is not a request: nobody has asked for it.
+    assert _requested_offer(follow_up, creator=creator, config=config) is None
 
 
 # ---------------------------------------------------------------------------

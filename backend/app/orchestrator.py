@@ -119,41 +119,49 @@ def _eligibility_result(run: tool_agent.AgentRun) -> dict[str, Any] | None:
 
 
 def _requested_offer(
-    run: tool_agent.AgentRun, *, creator: CreatorProfile, config: BrandConfig
+    run: tool_agent.AgentRun,
+    *,
+    creator: CreatorProfile,
+    config: BrandConfig,
+    continuation: bool = False,
 ) -> dict[str, Any] | None:
     """The gift the creator asked about, if the trace tells us which one.
 
-    Requires that there *was* a request: a catalogue browse, or a gift the model
-    checked on its own initiative, is not something the creator asked for.
+    Two things count as evidence, and neither is enough on its own:
 
-    The evaluation is computed here when the model did not call
-    ``check_gifting_eligibility`` on this turn -- otherwise a follow-up turn (an
-    address confirmation, say) would lose track of what was being discussed and be
-    reported as a plain answer.
+    * the creator's own words matched a gift (``find_available_gifts``), which is
+      what a fresh request looks like;
+    * the model checked a specific gift on a turn that continues an unfinished
+      task -- a follow-up like confirming the delivery address re-checks the gift
+      rather than searching for it again.
+
+    A catalogue browse, or a gift the model checked on its own initiative in a
+    fresh turn, is neither.
     """
     found = run.any_ok("find_available_gifts") or {}
     query = (found.get("query") or "").strip()
     matches = found.get("gifts") or []
-    if not query or not matches:
-        return None
+    matched_ids = {gift["gift_id"] for gift in matches}
 
     result = _eligibility_result(run) or {}
     offers = result.get("offers") or []
-    requested_ids = {gift["gift_id"] for gift in matches}
+    selected = result.get("selected")
 
     def lookup(gift_id: str) -> dict[str, Any] | None:
         offer = next((item for item in offers if item["gift_id"] == gift_id), None)
         if offer is not None:
             return offer
+        # The model never asked the tool about this gift; decide it here instead.
         configured = config.gifting.resolve(gift_id)
         return evaluation.evaluate_offer(creator, configured) if configured else None
 
-    selected = result.get("selected")
     if selected and selected != "all":
-        if selected not in requested_ids:
-            return None
-        return lookup(selected)
+        if selected in matched_ids or continuation:
+            return lookup(selected)
+        return None
 
+    if not query or not matches:
+        return None
     for candidate in matches:
         offer = lookup(candidate["gift_id"])
         if offer is not None:
@@ -162,10 +170,16 @@ def _requested_offer(
 
 
 def _declined_offer(
-    run: tool_agent.AgentRun, *, creator: CreatorProfile, config: BrandConfig
+    run: tool_agent.AgentRun,
+    *,
+    creator: CreatorProfile,
+    config: BrandConfig,
+    continuation: bool = False,
 ) -> dict[str, Any] | None:
     """The gift the creator asked about that they do *not* qualify for."""
-    requested = _requested_offer(run, creator=creator, config=config)
+    requested = _requested_offer(
+        run, creator=creator, config=config, continuation=continuation
+    )
     if requested is None or requested["eligible"]:
         return None
     return requested
@@ -177,6 +191,7 @@ def _extract_outcome(
     *,
     creator: CreatorProfile,
     config: BrandConfig,
+    continuation: bool = False,
 ) -> dict[str, Any]:
     """Turn the tool trace into a compact summary for the UI."""
     blocks = [
@@ -209,7 +224,9 @@ def _extract_outcome(
                 "duplicate": bool(tag.get("duplicate")),
             }
         else:
-            requested = _requested_offer(run, creator=creator, config=config)
+            requested = _requested_offer(
+                run, creator=creator, config=config, continuation=continuation
+            )
             if requested is not None and not requested["eligible"]:
                 # Alternatives are a fact about the creator and the config, not
                 # about which tools the model happened to call.
@@ -411,7 +428,13 @@ async def handle_turn(
         )
         run = tool_agent.AgentRun(text=text, model=config.models.general_inquiry)
 
-    outcome = _extract_outcome(run, target_agent, creator=creator, config=config)
+    outcome = _extract_outcome(
+        run,
+        target_agent,
+        creator=creator,
+        config=config,
+        continuation=bool(conversation.pending_agent),
+    )
 
     # The model can be talked into lying about an outcome, or into handing over
     # its instructions. Neither survives this check: the reply is replaced with
