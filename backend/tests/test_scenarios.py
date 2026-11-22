@@ -348,3 +348,19 @@ async def test_scenario_13_no_gift_available_shares_link(client, use_fake_llm):
     )
 
 
+# ---------------------------------------------------------------------------
+# Scenario 14 -- browsing the catalogue is not a refusal
+# ---------------------------------------------------------------------------
+async def test_scenario_14_browsing_is_not_a_decline(client, use_fake_llm):
+    """A vague request that lists every gift must not be recorded as a decline."""
+    use_fake_llm(browse_without_query=True)
+    response = await send(client, "creator_004", "Can I get a free gift?")
+    payload = response.json()
+
+    assert payload["outcome"]["type"] == "inquiry"
+    assert "?" in payload["reply"]
+
+    events = await events_for(client, payload["conversation_id"])
+    assert not any(event["type"] == "gift_issued" for event in events)
+
+

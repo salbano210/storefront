@@ -87,12 +87,14 @@ class FakeLLM:
         force_wrong_tag: bool = False,
         router_returns_garbage: bool = False,
         obey_injection: bool = False,
+        browse_without_query: bool = False,
         model: str = "fake/model",
     ) -> None:
         self.force_issue_gift_when_ineligible = force_issue_gift_when_ineligible
         self.force_wrong_tag = force_wrong_tag
         self.router_returns_garbage = router_returns_garbage
         self.obey_injection = obey_injection
+        self.browse_without_query = browse_without_query
         self.model = model
         self.calls: list[dict[str, Any]] = []
 
@@ -204,7 +206,10 @@ class FakeLLM:
             return self._tools(
                 [
                     ("get_creator_profile", {}),
-                    ("find_available_gifts", {"query": user}),
+                    (
+                        "find_available_gifts",
+                        {"query": "" if self.browse_without_query else user},
+                    ),
                 ]
             )
 

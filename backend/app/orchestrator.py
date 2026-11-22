@@ -89,14 +89,11 @@ def _suggested_gift(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     return None
 
 
-def _eligibility_result(run: tool_agent.AgentRun, *, all_offers: bool) -> dict[str, Any] | None:
-    """The last successful eligibility check, optionally restricted to the full sweep."""
+def _eligibility_result(run: tool_agent.AgentRun) -> dict[str, Any] | None:
+    """The last successful eligibility check."""
     for record in reversed(run.tool_calls):
-        if record.name != "check_gifting_eligibility" or not record.result.get("ok"):
-            continue
-        if all_offers and record.result.get("selected") != "all":
-            continue
-        return record.result
+        if record.name == "check_gifting_eligibility" and record.result.get("ok"):
+            return record.result
     return None
 
 
@@ -105,9 +102,10 @@ def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
 
     A creator can be ineligible for the gift they asked about while still
     qualifying for a cheaper one, so "did they qualify for anything" is the wrong
-    question. This finds the specific gift under discussion.
+    question. This finds the specific gift under discussion -- and requires that
+    there *was* a request: a catalogue browse is not something to decline.
     """
-    result = _eligibility_result(run, all_offers=False)
+    result = _eligibility_result(run)
     if result is None:
         return None
     offers = result.get("offers") or []
@@ -118,6 +116,8 @@ def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
         return match if match is not None and not match["eligible"] else None
 
     found = run.any_ok("find_available_gifts") or {}
+    if not (found.get("query") or "").strip():
+        return None  # the model listed the catalogue; nothing was asked for
     for candidate in found.get("gifts") or []:
         offer = next(
             (item for item in offers if item["gift_id"] == candidate["gift_id"]), None
@@ -127,7 +127,13 @@ def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     return None
 
 
-def _extract_outcome(run: tool_agent.AgentRun, target_agent: str) -> dict[str, Any]:
+def _extract_outcome(
+    run: tool_agent.AgentRun,
+    target_agent: str,
+    *,
+    creator: CreatorProfile,
+    config: BrandConfig,
+) -> dict[str, Any]:
     """Turn the tool trace into a compact summary for the UI."""
     blocks = [
         {
@@ -161,7 +167,9 @@ def _extract_outcome(run: tool_agent.AgentRun, target_agent: str) -> dict[str, A
         else:
             declined = _declined_offer(run)
             if declined is not None:
-                sweep = _eligibility_result(run, all_offers=True) or {}
+                # Alternatives are a fact about the creator and the config, not
+                # about which tools the model happened to call.
+                sweep = evaluation.evaluate_gifting(creator, config)
                 outcome = {
                     "type": "gift_declined",
                     "gift": declined["name"],
@@ -170,7 +178,7 @@ def _extract_outcome(run: tool_agent.AgentRun, target_agent: str) -> dict[str, A
                     "shortfalls": declined["shortfalls"],
                     "alternatives": [
                         {"name": item["name"], "url": item["url"]}
-                        for item in sweep.get("eligible_offers") or []
+                        for item in sweep["eligible_offers"]
                     ],
                 }
             else:
@@ -349,7 +357,7 @@ async def handle_turn(
         )
         run = tool_agent.AgentRun(text=text, model=config.models.general_inquiry)
 
-    outcome = _extract_outcome(run, target_agent)
+    outcome = _extract_outcome(run, target_agent, creator=creator, config=config)
 
     # The model can be talked into lying about an outcome, or into handing over
     # its instructions. Neither survives this check: the reply is replaced with
