@@ -3,278 +3,203 @@ import { useMemo, useState } from 'react'
 import { formatters } from '../api'
 import { Badge } from './ui.jsx'
 import { CriteriaTable } from './CriteriaTable.jsx'
+import {
+  OUTCOMES,
+  STEP_ICONS,
+  decisionFacts,
+  groupTurns,
+  humanAgent,
+  stepSentence,
+} from './transcriptModel.js'
 
 /* ---------------------------------------------------------------------------
- * The readable view: a conversation transcript, with each agent turn carrying
- * its own internally-expandable trace (routing, tool calls, criteria, model
- * calls, guardrails). Raw events are still available under the Raw events tab.
+ * The transcript: answer first, evidence underneath.
+ *
+ * Each turn opens with what was decided and the facts behind it, then a trace
+ * that reads as sentences rather than tool names and JSON. The wording lives in
+ * transcriptModel.js, where it can be checked against a real event log.
  * ------------------------------------------------------------------------- */
 
-const ICONS = {
-  intent_classified: '🔀',
-  agent_handoff: '➡',
-  agent_resumed: '↩',
-  profile_lookup: '🪪',
-  criteria_evaluated: '📊',
-  address_validated: '📮',
-  tool_call_completed: '🔧',
-  tool_call_failed: '🔧',
-  llm_response: '🤖',
-  llm_fallback: '↺',
-  guardrail_blocked: '🛡',
-  guardrail_adjusted: '✎',
-  injection_suspected: '⚠',
-  gift_issued: '🎁',
-  tag_applied: '🏷',
-  budget_blocked: '⛔',
-  config_updated: '⚙',
-}
-
-const TRACE_AGENTS = new Set(['router_agent', 'guard', 'admin'])
-
-function bucketTitle(event) {
-  const payload = event.payload || {}
-  switch (event.type) {
-    case 'intent_classified':
-      return `route → ${payload.intent} · ${Math.round((payload.confidence || 0) * 100)}%`
-    case 'agent_handoff':
-      return `${payload.from} → ${payload.to}`
-    case 'agent_resumed':
-      return `${payload.agent} resumed`
-    case 'profile_lookup':
-      return 'verified profile lookup'
-    case 'address_validated':
-      return payload.valid
-        ? `address validated · ${payload.normalised}`
-        : `address rejected · ${payload.reason}`
-    case 'criteria_evaluated':
-      if (payload.policy === 'pitch') {
-        return `pitch score ${payload.score}/100 → ${payload.label} (${payload.decision})`
-      }
-      if (payload.selected && payload.selected !== 'all') {
-        return `gift criteria · ${payload.selected}`
-      }
-      return 'gift criteria · every gift'
-    case 'tool_call_completed':
-    case 'tool_call_failed':
-      return `${payload.tool || 'tool'}()`
-    case 'llm_response':
-      return event.model || 'model call'
-    case 'guardrail_blocked':
-      return `guardrail · ${payload.guardrail || 'blocked'}`
-    case 'injection_suspected':
-      return 'instruction-override attempt'
-    case 'gift_issued':
-      return `gift issued · ${payload.product || payload.sku}`
-    case 'tag_applied':
-      return `tag applied · ${payload.tag}`
-    default:
-      return event.type.replaceAll('_', ' ')
-  }
-}
-
-function bucketDetail(event) {
-  const payload = event.payload || {}
-  switch (event.type) {
-    case 'intent_classified':
-      return payload.reasoning
-    case 'tool_call_completed':
-    case 'tool_call_failed': {
-      const result = payload.result || {}
-      if (result.ok === false) return result.error || result.message
-      return result.message || null
-    }
-    case 'guardrail_blocked':
-      return event.summary
-    default:
-      return null
-  }
-}
-
-function Bucket({ event }) {
-  const [open, setOpen] = useState(false)
-  const payload = event.payload || {}
-  const detail = bucketDetail(event)
-  const hasBody = Boolean(
-    payload.arguments ||
-      payload.result ||
-      payload.offers ||
-      payload.components ||
-      payload.message ||
-      payload.patterns
+function Facts({ rows }) {
+  const shown = rows.filter((row) => row.value)
+  if (!shown.length) return null
+  return (
+    <dl className="step-facts">
+      {shown.map((row) => (
+        <div key={row.label}>
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
+}
+
+function BucketBody({ event }) {
+  const payload = event.payload || {}
+  const result = payload.result || {}
+  const tool = payload.tool
+  const [raw, setRaw] = useState(false)
+
+  const offers = event.type === 'criteria_evaluated' ? payload.offers || [] : []
+  const components = event.type === 'criteria_evaluated' ? payload.components || [] : []
+  const gifts = tool === 'find_available_gifts' ? result.gifts || [] : []
 
   return (
-    <div className={`bucket ${event.status}`}>
-      <button
-        type="button"
-        className="bucket-head"
-        onClick={() => setOpen(!open)}
-        disabled={!hasBody}
-      >
-        <span className="bucket-caret">{hasBody ? (open ? '▾' : '▸') : '·'}</span>
-        <span className="bucket-icon">{ICONS[event.type] || '•'}</span>
-        <span className="bucket-title">{bucketTitle(event)}</span>
-        {detail && <span className="bucket-detail muted small">{detail}</span>}
-        <span className="bucket-meta">
-          {event.latency_ms ? `${event.latency_ms} ms` : ''}
-          {event.cost_usd ? ` · ${formatters.cost(event.cost_usd)}` : ''}
-        </span>
-      </button>
+    <div className="bucket-body">
+      {event.type === 'address_validated' && (
+        <Facts
+          rows={[
+            { label: 'Given', value: payload.input || '—' },
+            { label: 'Shipping to', value: payload.normalised },
+            { label: 'Suggested', value: payload.suggestion },
+            { label: 'Why not', value: payload.reason },
+            { label: 'Address on file', value: payload.address_on_file },
+          ]}
+        />
+      )}
 
-      {open && (
-        <div className="bucket-body">
-          {payload.arguments && (
-            <pre className="bucket-json">{JSON.stringify(payload.arguments, null, 2)}</pre>
-          )}
+      {event.type === 'gift_issued' && (
+        <Facts
+          rows={[
+            { label: 'Order', value: payload.order_id },
+            { label: 'Product', value: payload.product },
+            { label: 'Shipping to', value: payload.shipping_address },
+            { label: 'Address on file', value: payload.address_on_file },
+            {
+              label: 'Address',
+              value: payload.address_changed ? 'different from the one on file' : null,
+            },
+          ]}
+        />
+      )}
 
-          {payload.offers && (
-            <div className="bucket-offers">
-              {payload.offers.map((offer) => (
-                <div key={offer.gift_id} className="bucket-offer">
-                  <div className="bucket-offer-head">
-                    <strong>{offer.name}</strong>
-                    <Badge tone={offer.eligible ? 'sage' : 'red'}>
-                      {offer.eligible ? 'qualifies' : 'does not qualify'}
-                    </Badge>
-                    <span className="muted small">{offer.sku}</span>
-                  </div>
-                  <CriteriaTable checks={offer.checks || []} />
-                </div>
-              ))}
-            </div>
-          )}
+      {gifts.length > 0 && (
+        <ul className="step-list">
+          {gifts.map((gift) => (
+            <li key={gift.gift_id}>
+              <span className="step-list-name">{gift.name}</span>
+              <span className="muted small">
+                {gift.sku} · {formatters.money(gift.retail_price)}
+              </span>
+              <Badge tone={gift.eligible ? 'sage' : 'slate'}>
+                {gift.eligible ? 'qualifies' : 'not eligible'}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
 
-          {payload.components && (
-            <ul className="bucket-components">
-              {payload.components.map((component) => (
-                <li key={component.key}>
-                  <span>{component.label}</span>
-                  <span className="muted small">{component.detail}</span>
-                  <span className="mono">
-                    {component.points} / {component.weight}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {payload.response_instructions && (
-            <p className="bucket-note">
-              <strong>Follow-up for this tag:</strong> {payload.response_instructions}
-            </p>
-          )}
-
-          {event.type === 'address_validated' && (
-            <p className="bucket-note">
-              <strong>Given:</strong> {payload.input || '—'}
-              {payload.normalised && (
-                <>
-                  {' · '}
-                  <strong>Shipping to:</strong> {payload.normalised}
-                </>
-              )}
-              {payload.suggestion && (
-                <>
-                  {' · '}
-                  <strong>Suggested correction:</strong> {payload.suggestion}
-                </>
-              )}
-            </p>
-          )}
-
-          {payload.patterns && (
-            <p className="bucket-note">
-              Patterns: <code>{payload.patterns.join(', ')}</code> — {payload.action}
-            </p>
-          )}
-
-          {payload.message && !payload.result && (
-            <pre className="bucket-json">{payload.message}</pre>
-          )}
-
-          {payload.result && (
-            <pre className="bucket-json">{JSON.stringify(payload.result, null, 2)}</pre>
-          )}
+      {offers.map((offer) => (
+        <div key={offer.gift_id} className="step-offer">
+          <div className="step-offer-head">
+            <strong>{offer.name}</strong>
+            <Badge tone={offer.eligible ? 'sage' : 'red'}>
+              {offer.eligible ? 'qualifies' : 'does not qualify'}
+            </Badge>
+            <span className="muted small">{offer.sku}</span>
+          </div>
+          <CriteriaTable checks={offer.checks || []} />
         </div>
+      ))}
+
+      {components.length > 0 && (
+        <ul className="step-list">
+          {components.map((component) => (
+            <li key={component.key}>
+              <span className="step-list-name">{component.label}</span>
+              <span className="muted small">{component.detail}</span>
+              <span className="mono">
+                {component.points} / {component.weight}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {payload.response_instructions && (
+        <p className="bucket-note">
+          <strong>What the agent was told to say next:</strong> {payload.response_instructions}
+        </p>
+      )}
+
+      {payload.patterns && (
+        <p className="bucket-note">
+          Patterns matched: <code>{payload.patterns.join(', ')}</code>. {payload.action}
+        </p>
+      )}
+
+      {payload.message && !payload.result && <pre className="bucket-json">{payload.message}</pre>}
+
+      <button type="button" className="step-raw-toggle" onClick={() => setRaw(!raw)}>
+        {raw ? 'Hide the raw payload' : 'Show the raw payload'}
+      </button>
+      {raw && (
+        <pre className="bucket-json">
+          {JSON.stringify(
+            { arguments: payload.arguments, result: payload.result || payload },
+            null,
+            2
+          )}
+        </pre>
       )}
     </div>
   )
 }
 
-const OUTCOME_TONE = {
-  gift_issued: 'sage',
-  pitch_passed: 'sage',
-  gift_duplicate: 'amber',
-  gift_declined: 'red',
-  pitch_rejected: 'red',
-  gift_suggested: 'slate',
-  inquiry: 'slate',
+function Bucket({ event }) {
+  const [open, setOpen] = useState(false)
+  const { text, meta } = stepSentence(event)
+  const tone = event.status === 'blocked' ? 'blocked' : event.status === 'warn' ? 'warn' : ''
+
+  return (
+    <div className={`step ${tone}`}>
+      <button type="button" className="step-head" onClick={() => setOpen(!open)}>
+        <span className="step-caret">{open ? '▾' : '▸'}</span>
+        <span className="step-icon">{STEP_ICONS[event.type] || '•'}</span>
+        <span className="step-text">{text}</span>
+        {meta && <span className="step-meta muted small">{meta}</span>}
+      </button>
+      {open && <BucketBody event={event} />}
+    </div>
+  )
 }
 
-function emptyTurn(event, key) {
-  return {
-    key,
-    creator: event.creator_id,
-    agent: '',
-    message: '',
-    reply: '',
-    outcome: null,
-    buckets: [],
-    all: [],
-    startedAt: event.created_at,
+/** The answer, before the evidence: what was decided, and the facts behind it. */
+function DecisionStrip({ turn }) {
+  const outcome = turn.outcome
+  if (!outcome) return null
+  const meta = OUTCOMES[outcome.type] || {
+    tone: 'slate',
+    icon: '•',
+    label: outcome.type.replaceAll('_', ' '),
   }
-}
+  const facts = decisionFacts(outcome)
 
-function groupTurns(events) {
-  const turns = []
-  let current = null
-
-  for (const event of events) {
-    if (event.type === 'message_received') {
-      current = emptyTurn(event, `turn-${event.id}`)
-      current.message = event.payload?.message || ''
-      current.all.push(event)
-      turns.push(current)
-      continue
-    }
-
-    if (!current) {
-      current = emptyTurn(event, `pre-${event.id}`)
-      turns.push(current)
-    }
-
-    current.all.push(event)
-
-    if (event.type === 'message_sent') {
-      current.reply = event.payload?.reply || ''
-      current.outcome = event.payload?.outcome || null
-      continue
-    }
-    // The started event duplicates the completed event's arguments.
-    if (event.type === 'tool_call_started') continue
-
-    if (event.agent && !TRACE_AGENTS.has(event.agent) && !current.agent) {
-      current.agent = event.agent
-    }
-    current.buckets.push(event)
-  }
-
-  return turns.map((turn) => {
-    const cost = turn.all.reduce((sum, event) => sum + (event.cost_usd || 0), 0)
-    const tokens = turn.all.reduce(
-      (sum, event) => sum + (event.tokens_in || 0) + (event.tokens_out || 0),
-      0
-    )
-    return { ...turn, cost, tokens, agent: turn.agent || 'agent' }
-  })
+  return (
+    <div className={`decision ${meta.tone}`}>
+      <div className="decision-head">
+        <span className="decision-icon">{meta.icon}</span>
+        <span className="decision-label">{meta.label}</span>
+        {facts.map((fact) => (
+          <span className="decision-fact" key={fact}>
+            {fact}
+          </span>
+        ))}
+      </div>
+      <div className="decision-meta muted small">
+        {humanAgent(turn.agent)}
+        {turn.modelCalls ? ` · ${turn.modelCalls} model calls` : ''}
+        {turn.tokens ? ` · ${turn.tokens.toLocaleString()} tokens` : ''}
+        {turn.cost ? ` · ${formatters.cost(turn.cost)}` : ''}
+        {turn.durationMs ? ` · ${(turn.durationMs / 1000).toFixed(1)}s` : ''}
+      </div>
+    </div>
+  )
 }
 
 function Turn({ turn }) {
   const [open, setOpen] = useState(true)
-  const tools = turn.buckets.filter(
-    (event) => event.type === 'tool_call_completed' || event.type === 'tool_call_failed'
-  ).length
 
   return (
     <article className="turn">
@@ -285,19 +210,20 @@ function Turn({ turn }) {
         <p>{turn.message || '—'}</p>
       </div>
 
-      {turn.buckets.length > 0 && (
+      <DecisionStrip turn={turn} />
+
+      {turn.steps.length > 0 && (
         <div className="turn-trace">
           <button type="button" className="trace-head" onClick={() => setOpen(!open)}>
-            <span className="bucket-caret">{open ? '▾' : '▸'}</span>
-            <span className="trace-agent">{turn.agent}</span>
+            <span className="step-caret">{open ? '▾' : '▸'}</span>
+            <span className="trace-agent">How it decided</span>
             <span className="muted small">
-              {tools} tool call{tools === 1 ? '' : 's'} · {turn.tokens.toLocaleString()} tokens ·{' '}
-              {formatters.cost(turn.cost)}
+              {turn.steps.length} step{turn.steps.length === 1 ? '' : 's'}
             </span>
           </button>
           {open && (
-            <div className="trace-buckets">
-              {turn.buckets.map((event) => (
+            <div className="trace-steps">
+              {turn.steps.map((event) => (
                 <Bucket key={event.id} event={event} />
               ))}
             </div>
@@ -308,12 +234,7 @@ function Turn({ turn }) {
       {turn.reply && (
         <div className="bubble agent">
           <div className="bubble-meta">
-            <span>{turn.agent}</span>
-            {turn.outcome && (
-              <Badge tone={OUTCOME_TONE[turn.outcome.type] || 'slate'}>
-                {turn.outcome.type.replaceAll('_', ' ')}
-              </Badge>
-            )}
+            <span>{humanAgent(turn.agent)}</span>
           </div>
           <p>{turn.reply}</p>
         </div>
@@ -325,7 +246,9 @@ function Turn({ turn }) {
 export default function Transcript({ events }) {
   const turns = useMemo(() => groupTurns(events), [events])
   if (!turns.length) {
-    return <p className="muted">No events yet. Send a message from a creator chat to see it here.</p>
+    return (
+      <p className="muted">No events yet. Send a message from a creator chat to see it here.</p>
+    )
   }
   return (
     <div className="transcript">
@@ -335,4 +258,3 @@ export default function Transcript({ events }) {
     </div>
   )
 }
-

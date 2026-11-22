@@ -279,29 +279,8 @@ async def _find_available_gifts(args: dict, ctx: ToolContext) -> dict:
         match["criteria"] = offer.get("criteria", [])
 
     eligible = [match for match in matches if match["eligible"]]
-    await ctx.logger.log(
-        events.TOOL_CALL_COMPLETED,
-        agent=ctx.agent,
-        summary=(
-            f"Found {len(matches)} gift(s) matching '{query}'"
-            if query
-            else f"Listed all {len(matches)} gifts"
-        ),
-        payload={
-            "query": query,
-            "matches": [
-                {
-                    "gift_id": match["gift_id"],
-                    "name": match["name"],
-                    "sku": match["sku"],
-                    "match_score": match["match_score"],
-                    "eligible": match["eligible"],
-                }
-                for match in matches
-            ],
-            "eligible_count": len(eligible),
-        },
-    )
+    # The tool loop already logs this call, with the full result, so logging again
+    # here would show the same step twice in the transcript.
     return _ok(
         gifts=matches,
         count=len(matches),
@@ -575,6 +554,7 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             agent=ctx.agent,
             summary=f"Duplicate gift suppressed for {offer.sku} (existing order {existing.order_id})",
             payload={
+                "tool": "issue_gift",
                 "duplicate": True,
                 "order_id": existing.order_id,
                 "sku": offer.sku,
@@ -729,6 +709,7 @@ async def _place_tag(args: dict, ctx: ToolContext) -> dict:
             agent=ctx.agent,
             summary=f"Duplicate tag suppressed: '{tag}' already applied",
             payload={
+                "tool": "place_tag",
                 "duplicate": True,
                 "tag": tag,
                 "decision": fit["decision"],

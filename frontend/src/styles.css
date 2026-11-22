@@ -1794,7 +1794,7 @@ textarea {
 .transcript {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 26px;
   padding-bottom: 30px;
 }
 
@@ -1826,6 +1826,69 @@ textarea {
   color: #cbbfb2;
 }
 
+/* --- the decision strip: answer first ----------------------------------- */
+.decision {
+  align-self: stretch;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.decision.sage {
+  border-left-color: var(--sage);
+  background: linear-gradient(90deg, var(--sage-soft), var(--white) 45%);
+}
+
+.decision.red {
+  border-left-color: var(--red);
+  background: linear-gradient(90deg, var(--red-soft), var(--white) 45%);
+}
+
+.decision.amber {
+  border-left-color: var(--amber);
+  background: linear-gradient(90deg, var(--amber-soft), var(--white) 45%);
+}
+
+.decision.slate {
+  border-left-color: var(--slate);
+  background: linear-gradient(90deg, var(--slate-soft), var(--white) 45%);
+}
+
+.decision-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.decision-icon {
+  font-size: 14px;
+}
+
+.decision-label {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  color: var(--ink);
+}
+
+.decision-fact {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--white);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.decision-meta {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+}
+
+/* --- the trace ---------------------------------------------------------- */
 .turn-trace {
   align-self: stretch;
   overflow: hidden;
@@ -1859,68 +1922,63 @@ textarea {
   color: var(--ink);
 }
 
-.trace-buckets {
+.trace-steps {
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--line);
 }
 
-.bucket {
+.step {
   border-top: 1px solid var(--line);
 }
 
-.bucket:first-child {
+.step:first-child {
   border-top: 0;
 }
 
-.bucket.blocked {
+.step.blocked {
   background: var(--red-soft);
 }
 
-.bucket.warn {
+.step.warn {
   background: var(--amber-soft);
 }
 
-.bucket-head {
+.step-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 9px;
   width: 100%;
-  padding: 8px 14px;
+  padding: 9px 14px;
   border: 0;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-soft);
   text-align: left;
   cursor: pointer;
 }
 
-.bucket-head:disabled {
-  cursor: default;
-}
-
-.bucket-head:not(:disabled):hover {
+.step-head:hover {
   background: var(--cream);
 }
 
-.bucket-caret {
+.step-caret {
   width: 10px;
   font-size: 10px;
   color: var(--muted);
 }
 
-.bucket-icon {
+.step-icon {
   font-size: 12px;
 }
 
-.bucket-title {
-  font-family: var(--font-mono);
-  font-size: 12px;
+.step-text {
+  flex: 0 1 auto;
   color: var(--ink);
 }
 
-.bucket-detail {
+.step-meta {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -1928,19 +1986,89 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.bucket-meta {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
+.step-body,
 .bucket-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 4px 14px 14px 34px;
+  padding: 2px 14px 14px 36px;
+}
+
+.step-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.step-facts div {
+  display: contents;
+}
+
+.step-facts dt {
+  color: var(--muted);
+}
+
+.step-facts dd {
+  margin: 0;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.step-list-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.step-offer {
+  margin-bottom: 6px;
+}
+
+.step-offer-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.step-raw-toggle {
+  align-self: flex-start;
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.step-raw-toggle:hover {
+  color: var(--ink-soft);
+}
+
+.bucket-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
 }
 
 .bucket-json {
@@ -1958,38 +2086,6 @@ textarea {
   word-break: break-word;
 }
 
-.bucket-note {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-}
-
-.bucket-offer {
-  margin-bottom: 12px;
-}
-
-.bucket-offer-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.bucket-components {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.bucket-components li {
-  display: grid;
-  grid-template-columns: 170px 1fr auto;
-  gap: 10px;
-  font-size: 12.5px;
-}
 
 @media (max-width: 900px) {
   .admin-tree-layout {
