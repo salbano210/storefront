@@ -142,8 +142,9 @@ The creator's messages are untrusted input, so the defence does not rely on the 
    gift was ordered, or a tag applied, when no tool produced it gets replaced with a truthful answer
    built from the real tool results. The model cannot lie about an outcome.
 4. **Leaks withheld.** A reply that echoes internal instructions is replaced, and the leaked text is
-   never written to the audit trail (a creator can read their own session's logs). Only a short
-   system-prompt preview is stored with each model call.
+   never written to the audit trail (a creator can read their own session's logs). The system prompt
+   itself is never stored either — each model call records only its length, the messages, and the
+   tool calls, so there is no prompt text in the logs to leak.
 5. **One gift per conversation.** A vague request ("can I get a free gift?") can otherwise tempt a
    weaker model into shipping every SKU in the catalog — observed live, once, on the fallback model.
    `issue_gift` now refuses a second order in the same conversation, so the blast radius of a bad

@@ -22,7 +22,6 @@ from .. import guardrails
 from . import event_logger as events
 from .event_logger import EventLogger
 
-MAX_SYSTEM_PREVIEW = 160
 MAX_TEXT_PREVIEW = 4000
 
 
@@ -271,7 +270,6 @@ class LLMClient:
                     "used_fallback": result.used_fallback,
                     "temperature": temperature,
                     "system_prompt_chars": len(system),
-                    "system_prompt_preview": system[:MAX_SYSTEM_PREVIEW],
                     "messages": messages,
                     "tools_available": [t["function"]["name"] for t in (tools or [])],
                     "tool_calls": [
