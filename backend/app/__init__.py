@@ -1,3 +1,3 @@
-"""ShopMy multi-agent creator relationship demo -- FastAPI backend."""
+"""Storefront multi-agent creator relationship demo -- FastAPI backend."""
 
 __version__ = "1.0.0"

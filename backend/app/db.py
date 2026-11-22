@@ -21,7 +21,7 @@ def _database_url() -> str:
     url = settings.DATABASE_URL
     if not url:
         settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        return f"sqlite+aiosqlite:///{settings.DATA_DIR / 'myshop.sqlite'}"
+        return f"sqlite+aiosqlite:///{settings.DATA_DIR / 'storefront.sqlite'}"
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
     elif url.startswith("postgresql://"):

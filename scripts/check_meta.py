@@ -13,7 +13,7 @@ BACKEND = Path(__file__).resolve().parent.parent / "backend"
 sys.path.insert(0, str(BACKEND))
 
 os.environ.setdefault("STATIC_DIR", "")
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="myshop-live-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="storefront-live-"))
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 

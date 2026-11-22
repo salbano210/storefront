@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 Intent = Literal["gift_request", "creator_pitch", "general_inquiry"]
 
 AGENT_KEYS = ("router", "gift_request", "creator_pitch", "general_inquiry")
-WEIGHT_KEYS = ("category", "engagement", "followers", "brand_revenue", "shopmy_sales")
+WEIGHT_KEYS = ("category", "engagement", "followers", "brand_revenue", "storefront_sales")
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class PitchTargets(BaseModel):
     ideal_followers: int = Field(50000, gt=0)
     ideal_engagement_rate: float = Field(0.05, gt=0, le=1)
     ideal_brand_revenue: float = Field(10000, gt=0)
-    ideal_shopmy_sales: float = Field(25000, gt=0)
+    ideal_storefront_sales: float = Field(25000, gt=0)
 
 
 class LabelThreshold(BaseModel):
@@ -120,7 +120,7 @@ class PitchConfig(BaseModel):
             "engagement": 25,
             "followers": 20,
             "brand_revenue": 15,
-            "shopmy_sales": 10,
+            "storefront_sales": 10,
         }
     )
 
@@ -220,7 +220,7 @@ class CreatorProfile(CreatorCard):
 
     audience: dict[str, Any]
     brand_attributed_revenue: float
-    shopmy_sales: float
+    storefront_sales: float
     previous_gifts: list[dict[str, Any]]
     shipping_address: str
 

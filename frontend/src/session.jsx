@@ -3,7 +3,7 @@ import { api, getAdminPasscode, getOpenRouterKey, setAdminPasscode, setOpenRoute
 
 const SessionContext = createContext(null)
 
-const CREATOR_STORAGE = 'myshop.creator_id'
+const CREATOR_STORAGE = 'storefront.creator_id'
 
 export function readSelectedCreator() {
   try {

@@ -4,7 +4,7 @@
 # Deploy: Render Dashboard -> New -> Blueprint -> pick this repo.
 services:
   - type: web
-    name: myshop-demo
+    name: storefront
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -20,7 +20,7 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: OPENROUTER_APP_NAME
-        value: myshop-demo
+        value: storefront
       - key: MAX_DAILY_SPEND_USD
         value: "2.0"
       - key: SESSION_MESSAGE_CAP

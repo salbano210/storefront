@@ -1,5 +1,5 @@
-const KEY_STORAGE = 'myshop.openrouter_key'
-const ADMIN_STORAGE = 'myshop.admin_passcode'
+const KEY_STORAGE = 'storefront.openrouter_key'
+const ADMIN_STORAGE = 'storefront.admin_passcode'
 
 /* ---------------------------------------------------------------------------
  * BYOK: a visitor's own OpenRouter key lives in sessionStorage only. It is

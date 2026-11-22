@@ -447,12 +447,12 @@ export default function AdminConfig() {
                 onChange={(value) => update(['pitch', 'targets', 'ideal_brand_revenue'], value)}
               />
             </Field>
-            <Field label="Ideal ShopMy sales">
+            <Field label="Ideal Storefront sales">
               <NumberInput
-                value={draft.pitch.targets.ideal_shopmy_sales}
+                value={draft.pitch.targets.ideal_storefront_sales}
                 min={1}
                 suffix="USD"
-                onChange={(value) => update(['pitch', 'targets', 'ideal_shopmy_sales'], value)}
+                onChange={(value) => update(['pitch', 'targets', 'ideal_storefront_sales'], value)}
               />
             </Field>
           </Section>

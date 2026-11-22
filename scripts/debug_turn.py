@@ -18,7 +18,7 @@ sys.path.insert(0, str(BACKEND))
 os.environ.setdefault("OPENROUTER_API_KEY", "sk-or-v1-testkey")
 os.environ.setdefault("ADMIN_PASSCODE", "test-passcode")
 os.environ.setdefault("STATIC_DIR", "")
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="myshop-debug-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="storefront-debug-"))
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 

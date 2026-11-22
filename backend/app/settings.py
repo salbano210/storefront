@@ -34,8 +34,8 @@ def _env_int(name: str, default: int) -> int:
 # --- OpenRouter -----------------------------------------------------------
 OPENROUTER_BASE_URL = _env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
-OPENROUTER_APP_NAME = _env("OPENROUTER_APP_NAME", "myshop-demo")
-OPENROUTER_APP_URL = _env("OPENROUTER_APP_URL", "https://github.com/salbano210/myshop-demo")
+OPENROUTER_APP_NAME = _env("OPENROUTER_APP_NAME", "storefront")
+OPENROUTER_APP_URL = _env("OPENROUTER_APP_URL", "https://github.com/salbano210/storefront")
 OPENROUTER_TIMEOUT_SECONDS = _env_float("OPENROUTER_TIMEOUT_SECONDS", 60.0)
 
 # Default models. Seeded into the brand config on first boot; the admin UI can
@@ -51,7 +51,7 @@ DEFAULT_MODELS = {
 # --- Demo protection ------------------------------------------------------
 ADMIN_PASSCODE = _env("ADMIN_PASSCODE")
 SESSION_SECRET = _env("SESSION_SECRET", "dev-secret-change-me")
-SESSION_COOKIE = "myshop_session"
+SESSION_COOKIE = "storefront_session"
 SESSION_TTL_DAYS = _env_int("SESSION_TTL_DAYS", 30)
 
 # --- Budget + abuse guards ------------------------------------------------

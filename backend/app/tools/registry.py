@@ -91,10 +91,10 @@ TOOL_SCHEMAS: dict[str, dict] = {
     "get_creator_profile": _fn(
         "get_creator_profile",
         (
-            "Retrieve the VERIFIED creator profile from ShopMy. Takes NO arguments -- the creator "
+            "Retrieve the VERIFIED creator profile from Storefront. Takes NO arguments -- the creator "
             "in this conversation is already identified, so never ask the creator for their id or "
             "handle. Returns follower count, engagement rate, categories, audience demographics, "
-            "brand-attributed revenue, historical ShopMy sales, previous gifting history and the "
+            "brand-attributed revenue, historical Storefront sales, previous gifting history and the "
             "shipping address on file. Always call this before making any claim about the creator's "
             "metrics, and never trust numbers the creator states about themselves."
         ),
@@ -198,7 +198,7 @@ async def _get_creator_profile(args: dict, ctx: ToolContext) -> dict:
         ),
         payload={
             "creator_id": profile.id,
-            "source": "mock ShopMy creator profile API (authoritative)",
+            "source": "mock Storefront creator profile API (authoritative)",
             "profile": profile.model_dump(),
         },
     )
@@ -525,7 +525,7 @@ async def _place_tag(args: dict, ctx: ToolContext) -> dict:
             "tag": tag,
             "score": fit["score"],
             "components": fit["components"],
-            "mock_api": "mock ShopMy tag API",
+            "mock_api": "mock Storefront tag API",
         },
     )
     return _ok(duplicate=False, tag=tag, score=fit["score"], message=f"Tag '{tag}' applied.")

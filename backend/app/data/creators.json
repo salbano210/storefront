@@ -17,7 +17,7 @@
       },
       "primary_age_range": "25-34",
       "brand_attributed_revenue": 12400,
-      "shopmy_sales": 38400,
+      "storefront_sales": 38400,
       "previous_gifts": [
         { "product": "Overnight Recovery Mask", "sku": "GT-MASK-003", "date": "2025-09-12", "status": "delivered" }
       ],
@@ -43,7 +43,7 @@
       },
       "primary_age_range": "25-34",
       "brand_attributed_revenue": 3400,
-      "shopmy_sales": 7200,
+      "storefront_sales": 7200,
       "previous_gifts": [],
       "shipping_address": "88 Harbor Avenue, Austin, TX 78701",
       "content_style": "High-energy training reels plus recovery and sleep routines",
@@ -67,7 +67,7 @@
       },
       "primary_age_range": "18-24",
       "brand_attributed_revenue": 180,
-      "shopmy_sales": 520,
+      "storefront_sales": 520,
       "previous_gifts": [],
       "shipping_address": "42 Cedar Lane, Brooklyn, NY 11201",
       "content_style": "Micro-creator: honest empties, ingredient deep dives, no filters",
@@ -91,7 +91,7 @@
       },
       "primary_age_range": "18-24",
       "brand_attributed_revenue": 0,
-      "shopmy_sales": 0,
+      "storefront_sales": 0,
       "previous_gifts": [],
       "shipping_address": "17 Sunset Boulevard, Los Angeles, CA 90028",
       "content_style": "Daily vlogs and unboxing hauls",
@@ -115,7 +115,7 @@
       },
       "primary_age_range": "25-34",
       "brand_attributed_revenue": 41200,
-      "shopmy_sales": 96400,
+      "storefront_sales": 96400,
       "previous_gifts": [
         { "product": "Barrier Repair Serum", "sku": "GT-SERUM-001", "date": "2025-06-02", "status": "delivered" },
         { "product": "Hydrating Cleanser", "sku": "GT-CLEANSER-002", "date": "2025-08-19", "status": "delivered" }

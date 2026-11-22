@@ -22,7 +22,7 @@ sys.path.insert(0, str(BACKEND))
 
 os.environ.setdefault("STATIC_DIR", "")
 os.environ.setdefault("ADMIN_PASSCODE", "smoke-passcode")
-os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="myshop-smoke-"))
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="storefront-smoke-"))
 os.environ.setdefault("SESSION_MESSAGE_CAP", "200")
 os.environ.setdefault("MAX_DAILY_SPEND_USD", "50")
 os.environ.setdefault("IP_RATE_LIMIT_PER_MINUTE", "0")

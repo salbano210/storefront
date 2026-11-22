@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from conftest import ADMIN_HEADERS
+
+from app.db import AsyncSessionLocal
+from app.models import ConfigVersion
+from app.services import config_manager
 
 pytestmark = pytest.mark.asyncio
 
@@ -93,7 +99,7 @@ async def test_invalid_values_are_rejected(client):
     bad_weights["pitch"]["weights"]["engagement"] = 0
     bad_weights["pitch"]["weights"]["followers"] = 0
     bad_weights["pitch"]["weights"]["brand_revenue"] = 0
-    bad_weights["pitch"]["weights"]["shopmy_sales"] = 0
+    bad_weights["pitch"]["weights"]["storefront_sales"] = 0
     assert (
         await client.put(
             "/api/config",
@@ -139,3 +145,27 @@ async def test_schema_endpoint(client):
     schema = response.json()
     assert "properties" in schema
     assert "gifting" in schema["properties"]
+
+
+async def test_stored_config_that_no_longer_validates_is_reseeded():
+    """A schema change between deploys must not brick every request."""
+    async with AsyncSessionLocal() as db:
+        db.add(
+            ConfigVersion(
+                config_json=json.dumps({"brand": {"name": "Legacy"}, "shopmy_sales": 1}),
+                updated_by="legacy-schema",
+            )
+        )
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        version, config = await config_manager.ensure_seeded(db)
+        assert config.brand.name == "Demo Brand"
+        assert config.pitch.weights["storefront_sales"] == 10
+        assert version > 1
+
+    # the healed version is what subsequent requests see
+    async with AsyncSessionLocal() as db:
+        version_again, config_again = await config_manager.get_current(db)
+        assert version_again == version
+        assert config_again.brand.name == "Demo Brand"

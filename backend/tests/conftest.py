@@ -26,7 +26,7 @@ os.environ["SESSION_MESSAGE_CAP"] = "40"
 os.environ["BYOK_SESSION_MESSAGE_CAP"] = "100"
 os.environ["IP_RATE_LIMIT_PER_MINUTE"] = "0"
 os.environ["STATIC_DIR"] = ""
-os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="myshop-tests-")
+os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="storefront-tests-")
 
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402

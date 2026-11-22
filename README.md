@@ -1,15 +1,16 @@
-# ShopMy Multi-Agent Creator Relationship Demo
+# Storefront — Multi-Agent Creator Relationship Demo
 
-An interactive, ShopMy-inspired prototype that simulates creator ⇄ brand conversations handled
-end-to-end by a **configurable, observable multi-agent system**.
+**Storefront** is a prototype creator-relationship platform. It simulates creator ⇄ brand
+conversations handled end-to-end by a **configurable, observable multi-agent system**.
 
 A creator picks their profile, chats with *Demo Brand*, and the agents classify the message, look up
 **verified** profile data, evaluate the brand's configured rules, call tools (issue a gift, apply a
 tag), and answer naturally. A separate logs page shows every routing decision, handoff, tool call,
 criteria check and guardrail block — produced by real execution, never fabricated.
 
-**Live demo:** `https://myshop-demo.onrender.com` *(add after your first deploy — see
-[DEPLOYMENT.md](DEPLOYMENT.md))*
+**Repo:** https://github.com/salbano210/storefront
+**Live demo:** `https://storefront.onrender.com` (or whichever URL Render assigns — see
+[DEPLOYMENT.md](DEPLOYMENT.md))
 
 ---
 
@@ -252,8 +253,8 @@ Everything the agents decide with lives in the brand configuration
       "minimum_brand_revenue", "preferred_audience_age"
     },
     "classification_labels": [{ "label", "min_score" }],   // one must have min_score 0
-    "targets": { "ideal_followers", "ideal_engagement_rate", "ideal_brand_revenue", "ideal_shopmy_sales" },
-    "weights": { "category", "engagement", "followers", "brand_revenue", "shopmy_sales" }
+    "targets": { "ideal_followers", "ideal_engagement_rate", "ideal_brand_revenue", "ideal_storefront_sales" },
+    "weights": { "category", "engagement", "followers", "brand_revenue", "storefront_sales" }
   },
   "agents": { "router" | "gift_request" | "creator_pitch" | "general_inquiry":
               { "instructions", "constraints" } },
@@ -284,7 +285,7 @@ exposes the JSON schema for the raw editor.
 |---|---|
 | Multi-agent routing, handoffs and conversation memory | Creator profile API (`get_creator_profile` reads local fixtures) |
 | Every business rule, threshold and guardrail | Order placement API (`issue_gift` returns a synthetic order id) |
-| The full audit log and per-call cost accounting | ShopMy tagging API (`place_tag`) |
+| The full audit log and per-call cost accounting | Storefront tagging API (`place_tag`) |
 | Admin configuration, versioning and validation | Authentication (demo passcode only; no accounts) |
 | OpenRouter model calls, retries and fallback | Shipping (nothing physically ships) |
 
@@ -318,7 +319,7 @@ render.yaml, Dockerfile, DEPLOYMENT.md
 
 ## Scope boundaries
 
-Prototype, not a production ShopMy integration. No real order placement, tagging, shipping or
+Prototype, not a production Storefront integration. No real order placement, tagging, shipping or
 creator messaging. No production authentication or database requirement. No autonomous
 paid-campaign negotiation, and no synchronised brand-side live chat. External actions are mocked but
 follow realistic workflows, while the agent architecture, business rules and audit trail are real.

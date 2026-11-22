@@ -58,10 +58,31 @@ def validate_config_payload(payload: dict) -> BrandConfig:
 
 
 async def ensure_seeded(db: AsyncSession) -> tuple[int, BrandConfig]:
-    """Create version 1 from the repo default if the table is empty."""
+    """Create version 1 from the repo default if the table is empty.
+
+    Also self-heals: if the newest stored configuration no longer validates
+    against the current schema (e.g. the schema changed between deploys), a
+    fresh version is seeded from the repo defaults rather than crashing every
+    request.
+    """
     existing = await db.scalar(select(ConfigVersion).order_by(desc(ConfigVersion.version)).limit(1))
     if existing:
-        return existing.version, BrandConfig(**json.loads(existing.config_json))
+        try:
+            return existing.version, BrandConfig(**json.loads(existing.config_json))
+        except (ValidationError, json.JSONDecodeError) as exc:
+            print(
+                f"[config] stored v{existing.version} no longer validates ({exc}); "
+                "seeding a new version from repo defaults"
+            )
+            config = load_default_config()
+            row = ConfigVersion(
+                config_json=config.model_dump_json(),
+                updated_by=f"reseed-after-schema-change (was v{existing.version})",
+            )
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            return row.version, config
     config = load_default_config()
     row = ConfigVersion(config_json=config.model_dump_json(), updated_by="seed")
     db.add(row)

@@ -38,7 +38,7 @@ export default function CreatorSelect() {
         <p className="eyebrow">Multi-agent creator relationship demo</p>
         <h1>Who are you today?</h1>
         <p className="lede">
-          Pick a creator to simulate. Your chosen profile is loaded from the ShopMy backend — the
+          Pick a creator to simulate. Your chosen profile is loaded from the Storefront backend — the
           agents always decide on verified profile data, never on what the creator claims.
         </p>
       </section>

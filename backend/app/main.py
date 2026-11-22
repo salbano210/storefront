@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ShopMy Multi-Agent Creator Relationship Demo",
+    title="Storefront Multi-Agent Creator Relationship Demo",
     version=__version__,
     description=(
         "A configurable, observable multi-agent system that handles routine creator-brand "
@@ -106,7 +106,7 @@ else:  # local dev without a build
     @app.get("/", include_in_schema=False)
     async def root() -> dict:
         return {
-            "service": "myshop-demo",
+            "service": "storefront",
             "version": __version__,
             "docs": "/docs",
             "note": "Frontend dev server is not built. Run `npm run dev` in frontend/.",

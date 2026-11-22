@@ -69,14 +69,14 @@
       "ideal_followers": 50000,
       "ideal_engagement_rate": 0.05,
       "ideal_brand_revenue": 10000,
-      "ideal_shopmy_sales": 25000
+      "ideal_storefront_sales": 25000
     },
     "weights": {
       "category": 30,
       "engagement": 25,
       "followers": 20,
       "brand_revenue": 15,
-      "shopmy_sales": 10
+      "storefront_sales": 10
     }
   },
   "agents": {

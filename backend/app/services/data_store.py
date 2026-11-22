@@ -1,4 +1,4 @@
-"""Mock ShopMy backend data: creator profiles and the product catalog.
+"""Mock Storefront backend data: creator profiles and the product catalog.
 
 This module is the only place that reads the JSON fixtures. Swapping these for
 real API calls later means changing this file alone.

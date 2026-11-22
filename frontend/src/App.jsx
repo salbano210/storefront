@@ -22,7 +22,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <div className="brand">
-            <span className="wordmark">shopmy</span>
+            <span className="wordmark">storefront</span>
             <span className="brand-divider" />
             <span className="brand-chip">Demo Brand</span>
           </div>
