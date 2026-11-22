@@ -129,7 +129,7 @@ export default function Logs() {
             }
           >
             <option value="session">My session</option>
-            <option value="all">All sessions</option>
+            <option value="all">All sessions (needs passcode)</option>
           </select>
         </label>
 

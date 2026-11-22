@@ -30,6 +30,7 @@ export default function AdminConfig() {
   const [tab, setTab] = useState('form')
   const [jsonDraft, setJsonDraft] = useState('')
   const [passcodeDraft, setPasscodeDraft] = useState('')
+  const [gateError, setGateError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,12 +46,20 @@ export default function AdminConfig() {
       setJsonDraft(JSON.stringify(config.config, null, 2))
       setCatalog(models.models || [])
       setError(null)
+      setGateError('')
     } catch (err) {
-      setError(err)
+      if (err.code === 'admin_passcode_required') {
+        // A stored-but-wrong passcode must send the admin back to the gate
+        // rather than leaving them stranded on an error page.
+        setGateError('That passcode was not accepted. Try again.')
+        clearPasscode()
+      } else {
+        setError(err)
+      }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [clearPasscode])
 
   useEffect(() => {
     if (hasPasscode) load()
@@ -149,8 +158,8 @@ export default function AdminConfig() {
               Unlock
             </button>
           </form>
-          {error?.code === 'admin_passcode_required' && (
-            <p className="detail-note bad">That passcode was not accepted.</p>
+          {(gateError || error?.code === 'admin_passcode_required') && (
+            <p className="detail-note bad">{gateError || 'That passcode was not accepted.'}</p>
           )}
         </div>
       </div>
