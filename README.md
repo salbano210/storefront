@@ -193,9 +193,36 @@ The second asserts that a request naming no product gets a question rather than 
 | Gift request | `google/gemini-2.5-flash-lite` | $0.10 / $0.40 |
 | Creator pitch | `google/gemini-2.5-flash-lite` | $0.10 / $0.40 |
 | General inquiry | `meta-llama/llama-3.1-8b-instruct` | $0.02 / $0.04 |
-| Fallback (on 429/5xx) | `openai/gpt-4.1-nano` | $0.10 / $0.40 |
+| Fallback (after the primary is out of retries) | `openai/gpt-4.1-nano` | $0.10 / $0.40 |
 
 A live smoke run of all scenarios — 14 creator turns, ~50 model calls — cost **$0.005**.
+
+### When a provider wobbles
+
+Shared OpenRouter backends intermittently answer `502 - Provider returned an empty
+response`, and a single turn makes four to six calls, so an occasional blip would
+otherwise surface on most turns. The client handles it in `complete()`:
+
+1. **Retry the same model** on anything retryable — 408, 409, 429, 5xx, connection
+   and timeout errors — with exponential backoff, `OPENROUTER_MAX_RETRIES` times
+   (default 2, `OPENROUTER_RETRY_BACKOFF_SECONDS` default 0.5s).
+2. **Only then fall back.** A model switch is a last resort, not a first response to
+   a blip: the fallback is a different, cheaper model, and switching mid-conversation
+   changes who is answering.
+3. A non-retryable failure (a 400) skips straight to the fallback, because retrying
+   cannot help. Out-of-credits raises immediately rather than spending the fallback
+   on a call that cannot succeed.
+
+What this looks like in `/logs`:
+
+| Situation | What you see |
+|---|---|
+| Blip absorbed | No error event. The `llm_response` event carries `retries: 1` |
+| Model genuinely down | One `llm_error` reading *"failed after 3 attempts"*, then `llm_fallback` to the fallback model, and the turn completes |
+| Key out of credits | `llm_error`, HTTP 402 with `credits_exhausted` — the fallback is not tried, because it cannot help |
+
+So `llm_error` now means "a model was genuinely unavailable", not "the provider
+hiccuped once".
 
 ---
 
