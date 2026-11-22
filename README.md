@@ -9,8 +9,8 @@ tag), and answer naturally. A separate logs page shows every routing decision, h
 criteria check and guardrail block — produced by real execution, never fabricated.
 
 **Repo:** https://github.com/salbano210/storefront
-**Live demo:** `https://storefront.onrender.com` (or whichever URL Render assigns — see
-[DEPLOYMENT.md](DEPLOYMENT.md))
+**Live demo:** https://storefront-dalw.onrender.com — free tier, so the first request after
+~15 minutes idle takes 30–60 seconds to wake up. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 

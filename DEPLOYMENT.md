@@ -54,8 +54,10 @@ git push -u origin main
 
 ## 3. Share it
 
-Send the root URL. Visitors need nothing installed and no key — they land on the creator picker and
-can chat immediately on the host key.
+Send the root URL: **https://storefront-dalw.onrender.com**
+
+Visitors need nothing installed and no key — they land on the creator picker and can chat
+immediately on the host key.
 
 Optional extras:
 
@@ -80,6 +82,8 @@ Optional extras:
 ---
 
 ## 5. Verifying a deployment
+
+The live instance is at **https://storefront-dalw.onrender.com**. To check a deployment:
 
 ```bash
 # health + config version
