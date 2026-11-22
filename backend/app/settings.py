@@ -37,6 +37,11 @@ OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
 OPENROUTER_APP_NAME = _env("OPENROUTER_APP_NAME", "storefront")
 OPENROUTER_APP_URL = _env("OPENROUTER_APP_URL", "https://github.com/salbano210/storefront")
 OPENROUTER_TIMEOUT_SECONDS = _env_float("OPENROUTER_TIMEOUT_SECONDS", 60.0)
+# Shared OpenRouter backends intermittently answer 502 "provider returned an empty
+# response". Retrying the same model is much better than switching models
+# mid-conversation, so a transient blip should never reach the fallback.
+OPENROUTER_MAX_RETRIES = _env_int("OPENROUTER_MAX_RETRIES", 2)
+OPENROUTER_RETRY_BACKOFF_SECONDS = _env_float("OPENROUTER_RETRY_BACKOFF_SECONDS", 0.5)
 
 # Default models. Seeded into the brand config on first boot; the admin UI can
 # change them afterwards without touching code.

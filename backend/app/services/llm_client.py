@@ -3,13 +3,17 @@
 Thin async wrapper over the OpenAI-compatible OpenRouter API:
   * every call is routed through OpenRouter;
   * structured output is requested as JSON and validated by the caller;
-  * one fallback model is attempted on transport/5xx errors;
+  * a retryable failure (5xx, 429, timeout) is retried on the *same* model with
+    exponential backoff before any fallback is considered -- a provider blip
+    should not silently change which model is answering;
+  * only once a model is out of retries is the configured fallback tried;
   * each call is logged as an ``llm_response`` event with tokens, cost and
     latency, so the logs page can show real model behaviour.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass, field
@@ -23,6 +27,16 @@ from . import event_logger as events
 from .event_logger import EventLogger
 
 MAX_TEXT_PREVIEW = 4000
+
+# Statuses worth retrying on the same model. 4xx (other than 408/409/429) means
+# the request itself is wrong, so retrying only wastes time and money.
+RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+RETRYABLE_ERROR_NAMES = {
+    "APIConnectionError",
+    "APITimeoutError",
+    "InternalServerError",
+    "RateLimitError",
+}
 
 
 class LLMError(Exception):
@@ -48,6 +62,19 @@ def _is_credit_error(exc: Exception) -> bool:
         or "credit limit" in text
         or "requires more credits" in text
     )
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Is it worth trying the *same* model again?"""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status in RETRYABLE_STATUS
+    return type(exc).__name__ in RETRYABLE_ERROR_NAMES
+
+
+def _retry_delay(attempt: int) -> float:
+    """Exponential backoff, so a wobbling provider isn't hammered."""
+    return settings.OPENROUTER_RETRY_BACKOFF_SECONDS * (2 ** (attempt - 1))
 
 
 @dataclass
@@ -114,6 +141,8 @@ class LLMClient:
             base_url=settings.OPENROUTER_BASE_URL,
             timeout=settings.OPENROUTER_TIMEOUT_SECONDS,
             default_headers=headers,
+            # Retries are handled in complete() instead, where they can be logged
+            # and where the fallback decision lives. One retry policy, not two.
             max_retries=0,
         )
 
@@ -138,61 +167,81 @@ class LLMClient:
                 + json.dumps(schema, indent=2)
             )
 
-        attempts = [model]
+        attempts: list[tuple[str, bool]] = [(model, False)]
         if self.fallback_model and self.fallback_model != model:
-            attempts.append(self.fallback_model)
+            attempts.append((self.fallback_model, True))
 
         last_error = "unknown error"
-        credit_error = False
-        for index, candidate in enumerate(attempts):
-            try:
-                return await self._call(
-                    model=candidate,
-                    requested_model=model,
-                    system=system_prompt,
-                    messages=messages,
-                    schema=schema,
-                    schema_name=schema_name,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    agent=agent,
-                    used_fallback=index > 0,
-                )
-            except Exception as exc:  # noqa: BLE001 - normalised into LLMError
-                last_error = f"{type(exc).__name__}: {exc}"
-                if _is_credit_error(exc):
-                    credit_error = True
-                if self.logger is not None:
-                    await self.logger.log(
-                        events.LLM_ERROR,
+
+        for index, (candidate, used_fallback) in enumerate(attempts):
+            retries = 0
+            while True:
+                try:
+                    return await self._call(
+                        model=candidate,
+                        requested_model=model,
+                        system=system_prompt,
+                        messages=messages,
+                        schema=schema,
+                        schema_name=schema_name,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
                         agent=agent,
-                        status="error",
-                        summary=f"{candidate} failed: {last_error}",
-                        payload={"model": candidate, "error": last_error},
+                        used_fallback=used_fallback,
+                        retries=retries,
                     )
+                except Exception as exc:  # noqa: BLE001 - normalised into LLMError
+                    last_error = f"{type(exc).__name__}: {exc}"
+
+                    # No credits means no model will work, so stop rather than
+                    # spending the fallback on a doomed call.
+                    if _is_credit_error(exc):
+                        if self.logger is not None:
+                            await self.logger.log(
+                                events.LLM_ERROR,
+                                agent=agent,
+                                status="error",
+                                summary=f"{candidate} failed: {last_error}",
+                                payload={"model": candidate, "error": last_error},
+                            )
+                        raise LLMCreditsExhausted(
+                            "the OpenRouter key in use has no credits remaining"
+                        ) from exc
+
+                    if retries < settings.OPENROUTER_MAX_RETRIES and _is_retryable(exc):
+                        retries += 1
+                        await asyncio.sleep(_retry_delay(retries))
+                        continue
+                    break
+
+            # This candidate is out of attempts. Only now is it worth telling the
+            # operator -- and only now is switching models justified.
+            if self.logger is not None:
+                await self.logger.log(
+                    events.LLM_ERROR,
+                    agent=agent,
+                    status="error",
+                    summary=(
+                        f"{candidate} failed after {retries + 1} attempt"
+                        f"{'s' if retries else ''}: {last_error}"
+                    ),
+                    payload={"model": candidate, "error": last_error, "attempts": retries + 1},
+                )
                 if index < len(attempts) - 1:
-                    if self.logger is not None:
-                        await self.logger.log(
-                            events.LLM_FALLBACK,
-                            agent=agent,
-                            summary=f"Falling back to {attempts[index + 1]}",
-                            payload={
-                                "from": candidate,
-                                "to": attempts[index + 1],
-                                "error": last_error,
-                            },
-                        )
-                    continue
-                if credit_error:
-                    raise LLMCreditsExhausted(
-                        "the OpenRouter key in use has no credits remaining"
-                    ) from exc
-                raise LLMError(f"OpenRouter call failed: {last_error}") from exc
-        if credit_error:  # pragma: no cover - defensive
-            raise LLMCreditsExhausted("the OpenRouter key in use has no credits remaining")
-        raise LLMError(f"OpenRouter call failed: {last_error}")  # pragma: no cover
+                    await self.logger.log(
+                        events.LLM_FALLBACK,
+                        agent=agent,
+                        summary=f"Falling back to {attempts[index + 1][0]}",
+                        payload={
+                            "from": candidate,
+                            "to": attempts[index + 1][0],
+                            "error": last_error,
+                        },
+                    )
+
+        raise LLMError(f"OpenRouter call failed: {last_error}")
 
 
     async def _call(
@@ -210,6 +259,7 @@ class LLMClient:
         max_tokens: int | None,
         agent: str | None,
         used_fallback: bool,
+        retries: int = 0,
     ) -> LLMResult:
         payload: dict[str, Any] = {
             "model": model,
@@ -268,6 +318,7 @@ class LLMClient:
                     "model": result.model,
                     "requested_model": result.requested_model,
                     "used_fallback": result.used_fallback,
+                    "retries": retries,
                     "temperature": temperature,
                     "system_prompt_chars": len(system),
                     "messages": messages,

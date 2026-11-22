@@ -25,6 +25,7 @@ os.environ["ADMIN_PASSCODE"] = "test-passcode"
 os.environ["MAX_DAILY_SPEND_USD"] = "1000"
 os.environ["SESSION_MESSAGE_CAP"] = "40"
 os.environ["IP_RATE_LIMIT_PER_MINUTE"] = "0"
+os.environ["OPENROUTER_RETRY_BACKOFF_SECONDS"] = "0"
 os.environ["STATIC_DIR"] = ""
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="storefront-tests-")
 
