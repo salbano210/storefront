@@ -9,6 +9,9 @@ from __future__ import annotations
 import pytest
 from conftest import ADMIN_HEADERS
 
+from app.db import AsyncSessionLocal
+from app.models import Conversation
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -21,8 +24,8 @@ async def chat(client, creator_id: str, message: str, conversation_id: str | Non
     return response.json()
 
 
-async def analytics(client, **params) -> dict:
-    response = await client.get("/api/analytics", params=params)
+async def analytics(client, *, headers=None, **params) -> dict:
+    response = await client.get("/api/analytics", params=params, headers=headers)
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -81,6 +84,42 @@ async def test_a_follow_up_turn_does_not_create_a_second_conversation(client, us
 
     data = await analytics(client)
     assert data["totals"]["conversations"] == 1
+
+
+async def test_a_legacy_intent_is_still_counted(client, use_fake_llm):
+    """Rows written before the intents changed must not vanish from the totals.
+
+    A conversation stored with an intent we no longer classify has to appear in
+    by_intent (and therefore in the chart), or the counts wouldn't add up.
+    """
+    use_fake_llm()
+    await approve_a_gift(client, "creator_001")
+    # Attach the legacy row to this browser's own session, so the default
+    # (session-scoped) view has to account for it.
+    session_id = client.cookies.get("storefront_session")
+
+    async with AsyncSessionLocal() as db:
+        db.add(
+            Conversation(
+                id="conv_legacy",
+                session_id=session_id,
+                creator_id="creator_002",
+                intent="creator_pitch",
+                disposition="gift_request_approved",
+                last_outcome="gift_issued",
+            )
+        )
+        await db.commit()
+
+    data = await analytics(client)
+    intents = by_key(data["by_intent"], "intent")
+
+    assert data["totals"]["conversations"] == 2
+    assert intents["creator_pitch"]["count"] == 1
+    assert intents["creator_pitch"]["label"] == "Creator pitch"
+    assert sum(row["count"] for row in data["by_intent"]) == 2
+    # And it is drawn, not silently dropped from the stack.
+    assert sum(column["total"] for column in data["series"]) == 2
 
 
 # ---------------------------------------------------------------------------

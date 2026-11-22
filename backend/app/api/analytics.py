@@ -99,7 +99,7 @@ def _tally(counter: Counter, order: tuple[str, ...], key: str, total: int) -> li
     return [
         {
             key: item,
-            "label": labels.get(item, item),
+            "label": labels.get(item) or item.replace("_", " ").capitalize(),
             "count": counter.get(item, 0),
             "rate": round(counter.get(item, 0) / total, 4) if total else 0.0,
         }
@@ -139,7 +139,7 @@ async def analytics(
     dispositions = Counter(row.disposition or "other" for row in in_range)
     outcomes = Counter(row.last_outcome or "none" for row in in_range)
 
-    intent_order = INTENT_ORDER + (("unknown",) if intents.get("unknown") else ())
+    intent_order = INTENT_ORDER + tuple(sorted(set(intents) - set(INTENT_ORDER)))
     per_bucket: dict[str, Counter] = defaultdict(Counter)
     for row in in_range:
         bucket = _bucket_key(_as_utc(row.created_at), interval)
