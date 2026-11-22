@@ -103,26 +103,33 @@ def _declined_offer(run: tool_agent.AgentRun) -> dict[str, Any] | None:
     A creator can be ineligible for the gift they asked about while still
     qualifying for a cheaper one, so "did they qualify for anything" is the wrong
     question. This finds the specific gift under discussion -- and requires that
-    there *was* a request: a catalogue browse is not something to decline.
+    there *was* a request. A catalogue browse, or a gift the model checked on its
+    own initiative, is not something to decline.
     """
     result = _eligibility_result(run)
     if result is None:
         return None
-    offers = result.get("offers") or []
-    selected = result.get("selected")
 
+    offers = result.get("offers") or []
+    found = run.any_ok("find_available_gifts") or {}
+    query = (found.get("query") or "").strip()
+    matched = {gift["gift_id"] for gift in (found.get("gifts") or [])}
+
+    def was_requested(gift_id: str) -> bool:
+        return bool(query) and gift_id in matched
+
+    selected = result.get("selected")
     if selected and selected != "all":
         match = next((offer for offer in offers if offer["gift_id"] == selected), None)
-        return match if match is not None and not match["eligible"] else None
+        if match is None or match["eligible"] or not was_requested(match["gift_id"]):
+            return None
+        return match
 
-    found = run.any_ok("find_available_gifts") or {}
-    if not (found.get("query") or "").strip():
-        return None  # the model listed the catalogue; nothing was asked for
     for candidate in found.get("gifts") or []:
         offer = next(
             (item for item in offers if item["gift_id"] == candidate["gift_id"]), None
         )
-        if offer is not None and not offer["eligible"]:
+        if offer is not None and not offer["eligible"] and was_requested(offer["gift_id"]):
             return offer
     return None
 

@@ -364,3 +364,51 @@ async def test_scenario_14_browsing_is_not_a_decline(client, use_fake_llm):
     assert not any(event["type"] == "gift_issued" for event in events)
 
 
+# ---------------------------------------------------------------------------
+# Scenario 15 -- a gift nobody asked about is not a decline either
+# ---------------------------------------------------------------------------
+async def test_decline_requires_an_actual_request():
+    """`_declined_offer` is a claim about the creator's request, not about the model.
+
+    Two ways a decline can be wrong: the model browsed the catalogue, or it
+    checked a gift on its own initiative. Neither is a request, so neither is a
+    refusal -- and getting this wrong makes the turn terminal, which silently
+    breaks the follow-up question.
+    """
+    from app.agents.tool_agent import AgentRun, ToolCallRecord
+    from app.orchestrator import _declined_offer
+
+    ineligible = {"gift_id": "barrier-repair-serum", "name": "Barrier Repair Serum", "eligible": False}
+    eligibility = {"ok": True, "selected": "all", "offers": [ineligible]}
+
+    def run(*, query: str, matches: list[dict], selected: str = "all") -> AgentRun:
+        return AgentRun(
+            text="",
+            tool_calls=[
+                ToolCallRecord("check_gifting_eligibility", {}, {**eligibility, "selected": selected}),
+                ToolCallRecord(
+                    "find_available_gifts",
+                    {"query": query},
+                    {"ok": True, "query": query, "gifts": matches},
+                ),
+            ],
+        )
+
+    # Asked for it, and does not qualify -> a genuine decline.
+    assert _declined_offer(run(query="Barrier Repair Serum", matches=[ineligible])) is not None
+
+    # Browsed the catalogue -> no request, no decline.
+    assert _declined_offer(run(query="", matches=[ineligible])) is None
+
+    # Matched nothing -> nothing to decline.
+    assert _declined_offer(run(query="a leather jacket", matches=[])) is None
+
+    # Checked a gift the creator never mentioned -> not a decline.
+    assert (
+        _declined_offer(
+            run(query="a gentle cleanser", matches=[], selected="barrier-repair-serum")
+        )
+        is None
+    )
+
+
