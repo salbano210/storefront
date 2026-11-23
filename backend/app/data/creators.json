@@ -124,6 +124,32 @@
       "content_style": "Long-form YouTube reviews plus a weekly TikTok series",
       "tagline": "The glow-up friend you wish you had",
       "bio": "Beauty creator and former retail buyer. Long-form reviews, routine series and shelfie styling."
+    },
+    {
+      "id": "creator_006",
+      "name": "Steven Spielberg",
+      "handle": "@stevenspielberg",
+      "image": "https://api.dicebear.com/9.x/notionists/svg?seed=Steven&backgroundColor=e4e8f7",
+      "initials": "SS",
+      "followers": 684000,
+      "engagement_rate": 0.041,
+      "categories": ["beauty", "skincare", "wellness"],
+      "audience": {
+        "primary_age_range": "25-34",
+        "age_breakdown": { "18-24": 0.16, "25-34": 0.42, "35-44": 0.28, "45+": 0.14 },
+        "top_gender": "female",
+        "top_locations": ["United States", "United Kingdom", "Australia"]
+      },
+      "primary_age_range": "25-34",
+      "brand_attributed_revenue": 58400,
+      "storefront_sales": 142600,
+      "previous_gifts": [
+        { "product": "Hydrating Cleanser", "sku": "GT-CLEANSER-002", "date": "2025-07-21", "status": "delivered" }
+      ],
+      "shipping_address": "4400 Wilshire Boulevard, Los Angeles, CA 90010",
+      "content_style": "Cinematic long-form reviews and campaign documentaries",
+      "tagline": "Big screen, bigger routine",
+      "bio": "One of the largest skincare audiences on the platform. Campaign-scale collaborations and long-form ingredient films."
     }
   ]
 }

@@ -30,7 +30,7 @@ async def test_profiles_are_seeded_into_the_database():
 
 async def test_cards_stay_public_and_hide_private_fields(client):
     payload = (await client.get("/api/creators")).json()
-    assert len(payload["creators"]) == 5
+    assert len(payload["creators"]) == 6
     card = payload["creators"][0]
     assert "followers" in card
     assert "shipping_address" not in card

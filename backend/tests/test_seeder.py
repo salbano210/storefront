@@ -72,7 +72,7 @@ async def test_it_fills_the_dashboard_with_a_realistic_mix(client, use_fake_llm)
         "escalated",
     }
     # Spread across creators, so the logs' creator filter has something in it.
-    assert len(summary["by_creator"]) == 5
+    assert len(summary["by_creator"]) == 6
 
     data = await analytics(client)
     dispositions = {row["disposition"]: row["count"] for row in data["by_disposition"]}
@@ -192,19 +192,28 @@ def test_the_plan_preserves_recipe_order_so_a_reorder_follows_its_order():
 def test_the_shuffled_plan_spreads_outcomes_without_splitting_a_thread():
     """Times are handed out in execution order, so running the recipes as written
     would pile every approval at the start of the range and every refusal at the end.
-    The shuffle breaks that up, but a thread still has to run in order."""
-    plan = seeder._ordered(seeder._plan(FULL), random.Random(7))
-    assert len(plan) == len(seeder._plan(FULL))
+    The shuffle breaks that up, but a thread still has to run in order.
+
+    Planned at 400 rather than the recipe total: with eleven approvals a third of the
+    plan holding six of them is a coin toss, not a pile-up, and the assertion below
+    would be measuring the seed.
+    """
+    plan = seeder._ordered(seeder._plan(400), random.Random(7))
+    assert len(plan) == 400
 
     approvals = [
         index for index, recipe in enumerate(plan) if recipe.outcome in {"gift_issued", "gift_duplicate"}
     ]
+    assert len(approvals) > 40, len(approvals)
+    # Exactly three chunks: a stride over the whole plan leaves a stray fourth one
+    # holding a single conversation, which no share assertion can survive.
     third = len(plan) // 3
+    bounds = [0, third, 2 * third, len(plan)]
     # Every third of the plan gets a share of the approvals, and no single third
     # swallows most of them -- which is what running the recipes as written did.
     shares = [
-        len([index for index in approvals if start <= index < start + third])
-        for start in range(0, len(plan), third)
+        len([index for index in approvals if bounds[i] <= index < bounds[i + 1]])
+        for i in range(3)
     ]
     assert all(share > 0 for share in shares), shares
     assert max(shares) < len(approvals) / 2, shares

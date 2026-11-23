@@ -79,7 +79,7 @@ RECIPES: tuple[Recipe, ...] = (
     # Approved: the creator qualifies, confirms the address on file, and the
     # orchestrator places the order. Each of these is its own session.
     #
-    # Deliberately rare. Only two of the five profiles clear every gift's bar, so
+    # Deliberately rare. Only three of the six profiles clear every gift's bar, so
     # most requests are refused and the approval rate lands near a fifth rather than
     # looking like a rubber stamp.
     Recipe("gift_issued", "creator_001", ("Hi! I'd love to try the Barrier Repair Serum.", CONFIRM_ADDRESS), weight=3),
@@ -104,6 +104,11 @@ RECIPES: tuple[Recipe, ...] = (
     # Handed to a human by a configured keyword. These never reach the model.
     Recipe("escalated", "creator_003", ("Could I speak to a human about my order, please?",), weight=2),
     Recipe("escalated", "creator_004", ("I'm not happy. I've spoken to my lawyer about this.",), weight=1),
+    # Handed to a human by a profile rule. creator_006 clears every gift's bar and is
+    # still escalated, which is the precedence: the gift agent never runs. The second
+    # recipe is a plain question, because a VIP trigger fires on any message at all.
+    Recipe("escalated", "creator_006", ("I'd love to try the Barrier Repair Serum.",), weight=2),
+    Recipe("escalated", "creator_006", ("What products do you sell?",), weight=1),
     # The same creator coming back for a gift she already has: one order, then the
     # duplicate guard answering.
     Recipe("gift_issued", "creator_001", ("Hi again! I'd love the Barrier Repair Serum.", CONFIRM_ADDRESS), weight=1, thread="reorder"),

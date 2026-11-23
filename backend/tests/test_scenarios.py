@@ -535,3 +535,39 @@ async def test_awaiting_answer_is_decided_from_the_outcome():
     assert _awaiting_answer({"type": "inquiry"}, "general_handler") is False
 
 
+# ---------------------------------------------------------------------------
+# The three paths, one profile each, on the configuration as shipped
+# ---------------------------------------------------------------------------
+async def test_the_same_serum_request_lands_three_ways(client, use_fake_llm):
+    """Approved, denied, escalated -- the demo's spine, on the shipped config.
+
+    Asserted rather than left to whoever edits a threshold next. The three only hold
+    together if one profile clears the serum's rules, one falls short of them, and one
+    trips the VIP profile rule before the gift agent ever runs.
+    """
+    use_fake_llm()
+    message = "I'd love to try the Barrier Repair Serum."
+
+    approved = await request_gift(client, "creator_001", message)
+    assert approved["outcome"]["type"] == "gift_issued"
+    assert approved["outcome"]["product"] == "Barrier Repair Serum"
+    assert approved["outcome"]["order_id"]
+
+    denied = await request_gift(client, "creator_002", message)
+    assert denied["outcome"]["type"] == "gift_declined"
+    assert denied["outcome"]["failed_criteria"], "a refusal has to say what failed"
+
+    escalated = (await send(client, "creator_006", message)).json()
+    assert escalated["outcome"]["type"] == "escalated"
+    assert escalated["outcome"]["trigger"] == "metric"
+    assert escalated["outcome"]["reason"] == "VIP creator — route to the account team"
+    # Nothing classified it: the hand-off happens before the intent agent.
+    assert escalated["intent"] == ""
+
+    # The VIP clears every rule on the serum, so this is precedence rather than
+    # eligibility: the gift agent never ran and nothing was ordered.
+    types = [event["type"] for event in await events_for(client, escalated["conversation_id"])]
+    assert "criteria_evaluated" not in types
+    assert "gift_issued" not in types
+
+
