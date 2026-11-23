@@ -150,7 +150,9 @@ export function RateLine({ build }) {
                 cy={point.y}
                 r={3.5}
               >
-                <title>{`${point.label}: ${Math.round(point.value * 100)}% of ${point.decided} decided`}</title>
+                <title>{`${point.label}: ${Math.round(point.value * 100)}% of ${point.decided} decided${
+                  point.windowDays ? ` in the last ${point.windowDays} days` : ''
+                }`}</title>
               </circle>
             ))}
           {chart.labelled.map((point) => (

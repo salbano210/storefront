@@ -33,10 +33,12 @@ INTERVALS = ("day", "week", "month")
 # them reads as a trend. The window is expressed in days so the meaning is the same
 # at every interval, and rounded to whole buckets.
 RATE_WINDOW_DAYS = 21
-# Below this many decisions a rate is not plotted at all -- the point would be a
-# single approval dressed up as a percentage. Eight is where a rate stops swinging
-# by more than a few points per decision.
-RATE_MIN_DECIDED = 8
+# A quiet window still produces a point drawn from three decisions, which is how a
+# line ends up claiming a 33% spike that never happened. So the window widens
+# backwards until this many decisions are behind the point, up to RATE_MAX_WINDOW_DAYS.
+# Below that ceiling the point is not plotted at all.
+RATE_TARGET_DECIDED = 20
+RATE_MAX_WINDOW_DAYS = 60
 BUCKET_DAYS = {"day": 1, "week": 7, "month": 30}
 
 # The intent vocabulary, with the names the dashboard shows.
@@ -152,28 +154,49 @@ async def analytics(
     # The trailing window reaches back before the range, so the first points of the
     # line are not computed from a stub of a window.
     window_buckets = max(1, round(RATE_WINDOW_DAYS / BUCKET_DAYS[interval]))
-    all_buckets = _bucket_starts(start - timedelta(days=RATE_WINDOW_DAYS * 2), today, interval)
+    max_window_buckets = max(
+        window_buckets, round(RATE_MAX_WINDOW_DAYS / BUCKET_DAYS[interval])
+    )
+    lookback = start - timedelta(days=RATE_MAX_WINDOW_DAYS)
+    all_buckets = _bucket_starts(lookback, today, interval)
     window_counts: dict[str, Counter] = defaultdict(Counter)
     for row in rows:
         moment = _as_utc(row.created_at)
-        if moment.date() < start - timedelta(days=RATE_WINDOW_DAYS * 2):
+        if moment.date() < lookback:
             continue
         window_counts[_bucket_key(moment, interval)][row.disposition or "other"] += 1
 
-    def rate_window(bucket: str) -> dict:
-        """Decisions in the trailing window, and the rate they imply."""
-        index = all_buckets.index(bucket)
-        span = all_buckets[max(0, index - window_buckets + 1) : index + 1]
+    def window_totals(index: int, width: int) -> tuple[list[str], int, int]:
+        span = all_buckets[max(0, index - width + 1) : index + 1]
         approved = sum(window_counts[item]["gift_request_approved"] for item in span)
         denied = sum(window_counts[item]["gift_request_denied"] for item in span)
+        return span, approved, denied
+
+    def rate_window(bucket: str) -> dict:
+        """Decisions in the trailing window, and the rate they imply.
+
+        The window opens at its nominal width and widens backwards until enough
+        decisions are behind the point. A quiet fortnight otherwise yields a rate
+        computed from three decisions, which swings the line by thirty points.
+        """
+        index = all_buckets.index(bucket)
+        width = window_buckets
+        span, approved, denied = window_totals(index, width)
+        while approved + denied < RATE_TARGET_DECIDED and width < max_window_buckets:
+            width += 1
+            span, approved, denied = window_totals(index, width)
         decided = approved + denied
         return {
-            "window_buckets": len(span),
+            # The span it actually used, which is the nominal width unless the data
+            # was thin enough to force it wider.
+            "window_days": len(span) * BUCKET_DAYS[interval],
             "approved": approved,
             "denied": denied,
             "decided": decided,
+            # None where even the widest window cannot reach the target: there is no
+            # rate worth drawing, so the line breaks rather than inventing a cliff.
             "value": round(approved / decided, 4)
-            if decided >= RATE_MIN_DECIDED
+            if decided >= RATE_TARGET_DECIDED
             else None,
         }
 
@@ -213,7 +236,8 @@ async def analytics(
         "rate_window": {
             "days": RATE_WINDOW_DAYS,
             "buckets": window_buckets,
-            "min_decided": RATE_MIN_DECIDED,
+            "target_decided": RATE_TARGET_DECIDED,
+            "max_days": RATE_MAX_WINDOW_DAYS,
         },
         "totals": {
             "conversations": total,

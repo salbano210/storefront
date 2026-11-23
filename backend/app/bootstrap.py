@@ -32,12 +32,13 @@ async def bootstrap(db: AsyncSession) -> int:
 
 
 async def maybe_seed_sample_history(db: AsyncSession) -> None:
-    """Generate sample history at boot, if asked and if there is none.
+    """Generate sample history at boot, if asked and if there is not enough.
 
-    Only when the database has no sample history at all, so a redeploy on a
-    persistent database does not pile more on top. A failure here is logged and
-    swallowed: a demo with an empty dashboard still works, an app that will not
-    boot does not.
+    Skipped once the database already holds as much as ``SEED_DEMO_COUNT`` asks for, so
+    a redeploy on a persistent database does not pile more on top -- but raising the
+    count does take effect, instead of being ignored because *some* history exists. It
+    only ever replaces sample rows. A failure here is logged and swallowed: a demo with
+    an empty dashboard still works, an app that will not boot does not.
     """
     if not settings.SEED_DEMO_HISTORY:
         return
@@ -50,7 +51,7 @@ async def maybe_seed_sample_history(db: AsyncSession) -> None:
                 Conversation.source == seeder.SAMPLE_SOURCE
             )
         )
-        if existing:
+        if existing >= settings.SEED_DEMO_COUNT:
             return
         summary = await seeder.seed_history(
             db, count=settings.SEED_DEMO_COUNT, days=settings.SEED_DEMO_DAYS

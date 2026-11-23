@@ -43,6 +43,8 @@ SIMULATED_MODEL_NAME = "sample/offline-simulator"
 # The dashboard's approval rate is a trailing window (see ``api/analytics.py``), so
 # the history has to start *before* the range it is charted over. Otherwise the first
 # points of the line are averaged over a stub of a window, which reads as a spike.
+# It matches that module's *nominal* window rather than its widest one: a wider
+# lookback would buy the same smoothing by thinning out the range being charted.
 SPAN_LOOKBACK_DAYS = 21
 
 # Every creator profile carries an address, and the agent offers it before asking

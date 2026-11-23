@@ -246,7 +246,7 @@ The second asserts that a request naming no product gets a question rather than 
 |---|---|
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
-| **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it, with a gap wherever fewer than eight requests were decided in the window. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
+| **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it; where 21 days holds fewer than 20 decisions the window widens backwards (to 60 days) rather than drawing a point from a handful. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
 | **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered, the escalation trigger), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Escalated conversations are marked in the list, and an admin can hand one back to the agent. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
@@ -272,8 +272,14 @@ The approval rate line uses only the first two rows — the denominator is gift 
 decision, so questions and escalations cannot dilute it into meaninglessness. It is also a **trailing
 window**, not a per-bucket rate: a single day usually holds one or two decisions, so a daily rate is
 0% or 100% and reads as noise. Each point is the rate over the previous 21 days, which is what makes
-the line modulate around the brand's real rate instead of swinging between the extremes. Points with
-fewer than eight decisions behind them are left as gaps rather than plotted.
+the line modulate around the brand's real rate instead of swinging between the extremes.
+
+That window then widens backwards — up to 60 days — until at least 20 decisions are behind the point.
+A quiet fortnight would otherwise produce a rate computed from three decisions, which moves the line
+by thirty points on its own. Only when even the widest window cannot reach 20 decisions is the point
+left as a gap: a chart that says nothing is better than one that says 33% from three coin flips. Each
+point carries the window it actually used, so the tooltip can say *"23% of 41 decided in the last 31
+days"* rather than implying every point is measured over the same span.
 
 ### Sample history
 
@@ -308,9 +314,10 @@ Two consequences worth knowing:
 - **Each sample conversation gets its own session**, because the duplicate guard keys on the
   session. Sharing one session turned every repeat order into a duplicate instead of a second gift.
   Since the logs and the dashboard cover every session anyway, this costs nothing.
-- **`SEED_DEMO_HISTORY=1`** generates it at boot when there is none, which is how the live demo is
-  populated without anyone clicking anything. It is off by default, so a local run and the test
-  suite never get it by surprise.
+- **`SEED_DEMO_HISTORY=1`** generates it at boot whenever the database holds less of it than
+  `SEED_DEMO_COUNT` asks for — so raising the count takes effect on the next boot instead of being
+  ignored because *some* history is already there. It replaces sample rows only, and it is off by
+  default, so a local run and the test suite never get it by surprise.
 
 ---
 
@@ -393,7 +400,7 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 149 tests, no network required
+.venv/bin/python -m pytest -q          # 150 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
@@ -513,17 +520,19 @@ Each bucket reports:
 |---|---|
 | `total`, `counts` | conversations in the bucket, split by intent |
 | `dispositions` | the same conversations split by disposition — all four keys, always, so a stacked chart has a value for every series |
-| `rate` | the approval rate point: `approved`, `denied`, `decided` and `value`, summed over the trailing window that ends at this bucket |
+| `rate` | the approval rate point: `window_days`, `approved`, `denied`, `decided` and `value`, summed over the trailing window that ends at this bucket |
 
-`rate.value` is `null` in two cases, and both are deliberate. Nothing decided in the window means
-there is no rate; fewer than `rate_window.min_decided` (eight) decisions in it means the rate is not
-worth drawing. Plotting either as 0% would invent a cliff that never happened, so the line breaks
-instead. The window itself is reported once at the top level, so the UI can label the line without
-hardcoding it:
+`rate.value` is `null` where the window — widened as far as it is allowed to go — still cannot reach
+the target number of decisions. Plotting it as 0% would invent a cliff that never happened, so the
+line breaks instead. The window's rules are reported once at the top level, so the UI can label the
+line without hardcoding them:
 
 ```json
-"rate_window": { "days": 21, "buckets": 21, "min_decided": 8 }
+"rate_window": { "days": 21, "buckets": 21, "target_decided": 20, "max_days": 60 }
 ```
+
+`days` is the nominal width; `buckets` is that width in the units being charted (21 days, 3 weeks, 1
+month). A point's own `rate.window_days` is usually `days` and wider only where the data was thin.
 
 ### Escalation
 
@@ -639,7 +648,7 @@ backend/
     escalation.py  keyword + profile triggers for handing a conversation to a human (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           149 tests including a deterministic fake model
+  tests/           150 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  Transcript, transcriptModel (its reading logic, no React),

@@ -39,7 +39,7 @@ git push -u origin main
 | `OPENROUTER_APP_NAME` | Set | `storefront` (identifies the app in your OpenRouter dashboard). |
 | `MAX_DAILY_SPEND_USD` | Set | `2.0`. Hard ceiling on host-key spend per UTC day. |
 | `SESSION_MESSAGE_CAP` | Set | `40` messages per browser session. |
-| `SEED_DEMO_HISTORY` | Set | `1`. Generates a backdated sample history at boot when the database has none, so `/logs` and `/analytics` are populated on a fresh instance. Costs nothing (it uses the offline model) and takes a few seconds. |
+| `SEED_DEMO_HISTORY` | Set | `1`. Generates a backdated sample history at boot whenever the database holds less of it than `SEED_DEMO_COUNT` asks for, so `/logs` and `/analytics` are populated on a fresh instance and a raised count is picked up. Costs nothing (it uses the offline model) and takes a few seconds. |
 | `SEED_DEMO_DAYS` / `SEED_DEMO_COUNT` | Set | `90` / `240`. How far back to spread it, and how many conversations. The count is what gives the approval-rate line enough decisions per window to be a trend; about 16 seconds of boot. |
 | `DATA_DIR` | Set | `/app/data`. |
 

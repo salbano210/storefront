@@ -313,6 +313,9 @@ export function approvalChart(data, { width }) {
         x: f.centerX(index),
         value: rate.value ?? null,
         decided: rate.decided ?? 0,
+        // The window the point was computed from, which is the nominal width unless
+        // the data was thin enough to force it wider.
+        windowDays: rate.window_days ?? null,
         label: row.label,
         y:
           rate.value === null || rate.value === undefined
@@ -363,6 +366,7 @@ export function approvalChart(data, { width }) {
       y: point.y - 11,
       label: `${Math.round(point.value * 100)}%`,
       decided: point.decided,
+      windowDays: point.windowDays,
     })),
   }
 }

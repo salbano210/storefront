@@ -46,15 +46,15 @@ def by_key(rows: list[dict], key: str) -> dict:
     return {row[key]: row for row in rows}
 
 
-async def _shift_conversations_back_one_day() -> None:
-    """Move every conversation back a day, so the rate window has history behind it."""
+async def _shift_conversations_back(days: int) -> None:
+    """Move every conversation back, so the rate window has history behind it."""
     from datetime import timedelta
 
     from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
         for row in await db.scalars(select(Conversation)):
-            row.created_at = row.created_at - timedelta(days=1)
+            row.created_at = row.created_at - timedelta(days=days)
         await db.commit()
 
 
@@ -283,7 +283,8 @@ async def test_the_series_carries_dispositions_and_the_approval_rate(client, use
     assert data["totals"]["decided"] == 2
     assert data["totals"]["approval_rate"] == pytest.approx(0.5)
     assert data["rate_window"]["days"] == 21
-    # Two decisions is below the minimum sample, so there is no point to plot.
+    # Two decisions is below the target, and there is no history to widen into, so
+    # there is no point to plot.
     assert today["rate"]["value"] is None
 
     # Every bucket reports all four dispositions, so a stacked chart has a value
@@ -291,8 +292,11 @@ async def test_the_series_carries_dispositions_and_the_approval_rate(client, use
     assert all(len(row["dispositions"]) == 4 for row in data["series"])
 
 
-async def test_the_approval_rate_is_withheld_below_the_minimum_sample(client, use_fake_llm):
-    """A handful of decisions is not a rate: the point is withheld rather than plotted."""
+async def test_the_approval_rate_is_withheld_when_the_window_cannot_reach_the_target(
+    client, use_fake_llm
+):
+    """A handful of decisions is not a rate. The window widens looking for more, and
+    when there is nothing there the line breaks rather than drawing the point."""
     use_fake_llm()
     await chat(client, "creator_002", "What products do you sell?")
     await approve_a_gift(client, "creator_001")
@@ -302,7 +306,7 @@ async def test_the_approval_rate_is_withheld_below_the_minimum_sample(client, us
     data = await analytics(client, days=7, interval="day")
     today = data["series"][-1]
 
-    assert data["rate_window"]["min_decided"] == 8
+    assert data["rate_window"]["target_decided"] == 20
     # One approval and three refusals: 25% by arithmetic, but not a rate worth
     # drawing, so the line has a gap here.
     assert today["rate"]["decided"] == 4
@@ -312,15 +316,42 @@ async def test_the_approval_rate_is_withheld_below_the_minimum_sample(client, us
     assert data["totals"]["approval_rate"] == 0.25
 
 
+async def test_a_thin_window_widens_backwards_until_it_has_enough_decisions(
+    client, use_fake_llm
+):
+    """The widening is what stops a quiet stretch from swinging the line."""
+    use_fake_llm()
+    # Ten refusals a month ago...
+    for creator in ("creator_002", "creator_003"):
+        for _ in range(5):
+            await chat(client, creator, "Could I get the Barrier Repair Serum?")
+    await _shift_conversations_back(30)
+
+    # ...and twelve today. The nominal 21-day window holds only the twelve, which is
+    # short of the target, so the point reaches back and finds the other ten.
+    for creator in ("creator_002", "creator_003", "creator_004"):
+        for _ in range(4):
+            await chat(client, creator, "Could I get the Barrier Repair Serum?")
+
+    data = await analytics(client, days=7, interval="day")
+    today = data["series"][-1]
+
+    assert data["rate_window"]["days"] == 21
+    assert today["rate"]["decided"] == 22
+    # Widened from 21 days to 31 to take in the older bucket.
+    assert today["rate"]["window_days"] == 31
+    assert today["rate"]["value"] == 0.0
+
+
 async def test_the_approval_rate_is_a_trailing_window_not_a_bucket(client, use_fake_llm):
     """A day's own rate is a coin flip; the window is what makes the line a trend."""
     use_fake_llm()
-    # Yesterday: nine refusals. Today: four approvals. Read per bucket that is 0%
-    # then 100%; read as a trailing window it is 0% then 31%.
+    # Yesterday: twenty-four refusals. Today: four approvals. Read per bucket that is
+    # 0% then 100%; read as a trailing window it is 0% then 14%.
     for creator in ("creator_002", "creator_003", "creator_004"):
-        for _ in range(3):
+        for _ in range(8):
             await chat(client, creator, "Could I get the Barrier Repair Serum?")
-    await _shift_conversations_back_one_day()
+    await _shift_conversations_back(1)
 
     for creator in ("creator_001", "creator_005", "creator_001", "creator_005"):
         await approve_a_gift(client, creator)
@@ -329,17 +360,17 @@ async def test_the_approval_rate_is_a_trailing_window_not_a_bucket(client, use_f
     yesterday, today = data["series"]
 
     # The buckets themselves, which is what the stacked chart draws.
-    assert yesterday["dispositions"]["gift_request_denied"] == 9
+    assert yesterday["dispositions"]["gift_request_denied"] == 24
     assert today["dispositions"]["gift_request_approved"] == 4
     assert today["dispositions"]["gift_request_denied"] == 0
 
-    # The line: yesterday's window holds only yesterday's nine refusals, and today's
-    # holds both days -- not today's own four-out-of-four.
-    assert yesterday["rate"]["decided"] == 9
+    # The line: yesterday's window holds only yesterday's refusals, and today's holds
+    # both days -- not today's own four-out-of-four.
+    assert yesterday["rate"]["decided"] == 24
     assert yesterday["rate"]["value"] == 0.0
-    assert today["rate"]["decided"] == 13
+    assert today["rate"]["decided"] == 28
     assert today["rate"]["approved"] == 4
-    assert today["rate"]["value"] == pytest.approx(4 / 13, abs=0.01)
+    assert today["rate"]["value"] == pytest.approx(4 / 28, abs=0.01)
     assert data["rate_window"]["buckets"] == 21
 
 

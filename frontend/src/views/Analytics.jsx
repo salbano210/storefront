@@ -99,12 +99,16 @@ export default function Analytics() {
   const decided = data?.totals.decided ?? 0
   const window = data?.rate_window
   const latestRate = data
-    ? [...data.series].reverse().find((row) => row.rate?.value !== null && row.rate?.value !== undefined)
+    ? [...data.series]
+        .reverse()
+        .find((row) => row.rate?.value !== null && row.rate?.value !== undefined)
     : null
   const rateLabel =
     approvalRate === null || approvalRate === undefined ? '—' : formatters.pct(approvalRate)
   const latestRateLabel =
     latestRate === null || latestRate === undefined ? '—' : formatters.pct(latestRate.rate.value)
+  // Usually the nominal window; wider only where the sample was thin.
+  const latestWindowDays = latestRate?.rate?.window_days ?? window?.days
 
   return (
     <div className="page">
@@ -260,7 +264,7 @@ export default function Analytics() {
               <h2>Gift request approval rate</h2>
               <span className="muted small">
                 {window
-                  ? `${window.days}-day rolling · ${latestRateLabel} at the latest point`
+                  ? `${latestWindowDays}-day rolling · ${latestRateLabel} at the latest point`
                   : 'approved share of gift requests that reached a decision'}
               </span>
             </header>
@@ -268,8 +272,10 @@ export default function Analytics() {
             <p className="muted small chart-note">
               Each point is the share of the previous {window?.days ?? 21} days&apos; decided gift
               requests that were approved, so the line reads as a trend rather than a daily coin
-              flip. A gap means fewer than {window?.min_decided ?? 8} requests were decided in the
-              window. Questions and escalations are not counted as denials.
+              flip. Where {window?.days ?? 21} days holds fewer than {window?.target_decided ?? 20}
+              {' '}decisions the window widens backwards, up to {window?.max_days ?? 60} days, so a
+              quiet stretch cannot swing the line. A gap means even that was not enough to be worth
+              drawing. Questions and escalations are not counted as denials.
             </p>
           </section>
         </>

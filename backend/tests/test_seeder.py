@@ -228,7 +228,9 @@ def test_start_times_cover_the_range_plus_the_rate_window_and_favour_recent_days
     recent = len([start for start in starts if (today - start.date()).days < 14])
     oldest = len([start for start in starts if (today - start.date()).days >= span - 14])
     assert recent > oldest
-    assert oldest > 20
+    # ~1.4 conversations a day at the far end, which is enough for the rate window to
+    # average over rather than a row of empty buckets.
+    assert oldest > 15
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +263,13 @@ async def test_boot_fills_an_empty_database_and_then_leaves_it_alone(monkeypatch
         async with AsyncSessionLocal() as db:
             await bootstrap.bootstrap(db)
         assert await _sample_count() == LIGHT
+
+        # Raising the count does take effect, though: otherwise the setting is
+        # silently ignored on any database that already has some history.
+        monkeypatch.setattr(settings, "SEED_DEMO_COUNT", LIGHT * 2)
+        async with AsyncSessionLocal() as db:
+            await bootstrap.bootstrap(db)
+        assert await _sample_count() == LIGHT * 2
     finally:
         # The database is shared across the session, so leave it as it was found.
         async with AsyncSessionLocal() as db:
