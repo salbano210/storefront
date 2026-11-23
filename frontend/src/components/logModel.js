@@ -1,39 +1,22 @@
 /* ---------------------------------------------------------------------------
- * The transcript's reading logic, kept apart from its rendering.
+ * The logs page's reading logic, kept apart from its rendering.
  *
- * Nothing here touches React, so it can be exercised directly against a real
- * event log -- which is how the wording is checked, rather than by eye.
+ * Nothing here touches React, so the columns and the wording can be exercised
+ * directly against a real event log -- which is how they are checked, rather
+ * than by eye.
  * ------------------------------------------------------------------------- */
 
 import { formatters } from '../api.js'
 
+/** The decision each turn ended on. No icons: the type and the label carry it. */
 export const OUTCOMES = {
-  gift_issued: { tone: 'sage', icon: '✓', label: 'Gift approved' },
-  gift_duplicate: { tone: 'amber', icon: '↺', label: 'Duplicate order suppressed' },
-  gift_declined: { tone: 'red', icon: '✕', label: 'Gift declined' },
-  gift_suggested: { tone: 'slate', icon: '🔗', label: 'Product link shared' },
-  details_required: { tone: 'amber', icon: '…', label: 'Eligible — more details needed' },
-  inquiry: { tone: 'slate', icon: '💬', label: 'Answered' },
-  escalated: { tone: 'slate', icon: '🧑', label: 'Handed to a human' },
-}
-
-export const STEP_ICONS = {
-  intent_classified: '🔀',
-  agent_handoff: '➡',
-  agent_resumed: '↩',
-  profile_lookup: '🪪',
-  criteria_evaluated: '📊',
-  address_validated: '📮',
-  model_calls: '🤖',
-  tool_call_completed: '🔧',
-  tool_call_failed: '🔧',
-  guardrail_blocked: '🛡',
-  guardrail_adjusted: '✎',
-  injection_suspected: '⚠',
-  escalated: '🧑',
-  escalation_released: '↩',
-  gift_issued: '🎁',
-  budget_blocked: '⛔',
+  gift_issued: { tone: 'sage', label: 'Gift approved' },
+  gift_duplicate: { tone: 'amber', label: 'Duplicate order suppressed' },
+  gift_declined: { tone: 'red', label: 'Gift declined' },
+  gift_suggested: { tone: 'slate', label: 'Product link shared' },
+  details_required: { tone: 'amber', label: 'Eligible — more details needed' },
+  inquiry: { tone: 'slate', label: 'Answered' },
+  escalated: { tone: 'slate', label: 'Handed to a human' },
 }
 
 const AGENT_LABELS = {
@@ -110,7 +93,7 @@ export function toolSentence(name, args, result, event) {
   }
 }
 
-/** What this step did, in one sentence a non-engineer can read. */
+/** What this step did, in one line a non-engineer can still read. */
 export function stepSentence(event) {
   const payload = event.payload || {}
   const result = payload.result || {}
@@ -364,6 +347,180 @@ export function groupTurns(events) {
       durationMs,
       agent: turn.agent || 'agent',
       steps,
+    }
+  })
+}
+
+/* ---------------------------------------------------------------------------
+ * Rows
+ *
+ * The tables render these, so what a row holds is decided here rather than in
+ * JSX -- which is what lets the columns be checked against a real event log.
+ * ------------------------------------------------------------------------- */
+
+/** Columns of the flat event stream, which is the page's default view. */
+export const EVENT_COLUMNS = [
+  { key: 'id', label: '#', mono: true, align: 'right' },
+  { key: 'time', label: 'Time', mono: true },
+  { key: 'source', label: 'Source' },
+  { key: 'creator', label: 'Creator', mono: true },
+  { key: 'type', label: 'Type', mono: true },
+  { key: 'agent', label: 'Agent' },
+  { key: 'status', label: 'Status' },
+  { key: 'summary', label: 'Summary', wide: true },
+  { key: 'latency', label: 'ms', mono: true, align: 'right' },
+  { key: 'tokens', label: 'tok', mono: true, align: 'right' },
+  { key: 'cost', label: 'cost', mono: true, align: 'right' },
+]
+
+/** Columns of the grouped view: one row per turn, its steps nested underneath. */
+export const TURN_COLUMNS = [
+  { key: 'time', label: 'Time', mono: true },
+  { key: 'source', label: 'Source' },
+  { key: 'creator', label: 'Creator', mono: true },
+  { key: 'agent', label: 'Agent' },
+  { key: 'message', label: 'Message', wide: true },
+  { key: 'outcome', label: 'Outcome', mono: true },
+  { key: 'steps', label: 'Steps', align: 'right' },
+  { key: 'span', label: 'Span', mono: true, align: 'right' },
+  { key: 'tokens', label: 'tok', mono: true, align: 'right' },
+  { key: 'cost', label: 'cost', mono: true, align: 'right' },
+]
+
+/** Columns of the steps nested under an expanded turn. */
+export const STEP_COLUMNS = [
+  { key: 'time', label: 'Time', mono: true },
+  { key: 'type', label: 'Type', mono: true },
+  { key: 'agent', label: 'Agent' },
+  { key: 'status', label: 'Status' },
+  { key: 'detail', label: 'Detail', wide: true },
+  { key: 'latency', label: 'ms', mono: true, align: 'right' },
+  { key: 'tokens', label: 'tok', mono: true, align: 'right' },
+]
+
+function conversationIndex(conversations) {
+  return new Map(conversations.map((item) => [item.id, item]))
+}
+
+function statusTone(status) {
+  if (status === 'blocked') return 'red'
+  if (status === 'warn') return 'amber'
+  return null
+}
+
+/** A wall-clock span, in the largest unit that stays readable. */
+export function formatSpan(ms) {
+  if (!ms) return '—'
+  if (ms < 1000) return `${ms}ms`
+  // Round the seconds first, then split them: rounding each half separately is how
+  // a duration ends up reading "1m 60s".
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+/** The model calls a synthetic model_calls step carries. */
+function callsOf(event) {
+  return (event.payload || {}).calls || null
+}
+
+function tokensOf(event) {
+  const calls = callsOf(event)
+  const total = calls
+    ? calls.reduce((sum, call) => sum + (call.tokens_in || 0) + (call.tokens_out || 0), 0)
+    : (event.tokens_in || 0) + (event.tokens_out || 0)
+  return total ? total.toLocaleString() : '—'
+}
+
+function latencyOf(event) {
+  const calls = callsOf(event)
+  const ms = calls
+    ? calls.reduce((sum, call) => sum + (call.latency_ms || 0), 0)
+    : event.latency_ms
+  return ms ? `${ms}` : '—'
+}
+
+function sourceOf(conversation) {
+  return conversation?.source === 'seeded' ? 'sample' : 'live'
+}
+
+/** One row per event. */
+export function eventRows(events, conversations = []) {
+  const index = conversationIndex(conversations)
+  return events.map((event) => {
+    const tone = statusTone(event.status)
+    return {
+      key: `event-${event.id}`,
+      event,
+      conversation: index.get(event.conversation_id) || null,
+      tone,
+      tones: tone ? { status: tone } : {},
+      cells: {
+        id: String(event.id),
+        time: formatters.time(event.created_at),
+        source: sourceOf(index.get(event.conversation_id)),
+        creator: event.creator_id || '—',
+        type: event.type,
+        agent: event.agent || '—',
+        status: event.status,
+        summary: event.summary || '—',
+        latency: latencyOf(event),
+        tokens: tokensOf(event),
+        cost: formatters.cost(event.cost_usd),
+      },
+    }
+  })
+}
+
+/** One row per turn, with its decision and its totals. */
+export function turnRows(events, conversations = []) {
+  const index = conversationIndex(conversations)
+  return groupTurns(events).map((turn) => {
+    const first = turn.all[0]
+    const outcome = turn.outcome || {}
+    const meta = OUTCOMES[outcome.type]
+    const blocked = turn.all.some((event) => event.status === 'blocked')
+    return {
+      key: turn.key,
+      turn,
+      conversation: index.get(first?.conversation_id) || null,
+      tone: blocked ? 'red' : null,
+      tones: meta ? { outcome: meta.tone } : {},
+      cells: {
+        time: formatters.time(turn.startedAt),
+        source: sourceOf(index.get(first?.conversation_id)),
+        creator: turn.creator || '—',
+        agent: turn.agent,
+        message: turn.message || '—',
+        outcome: outcome.type || '—',
+        steps: String(turn.steps.length),
+        span: formatSpan(turn.durationMs),
+        tokens: turn.tokens ? turn.tokens.toLocaleString() : '—',
+        cost: formatters.cost(turn.cost),
+      },
+    }
+  })
+}
+
+/** One row per step of a turn, in the order they ran. */
+export function stepRows(steps) {
+  return steps.map((event) => {
+    const { text, meta } = stepSentence(event)
+    const tone = statusTone(event.status)
+    return {
+      key: `step-${event.id}`,
+      event,
+      tone,
+      tones: tone ? { status: tone } : {},
+      cells: {
+        time: event.created_at ? formatters.time(event.created_at) : '—',
+        type: event.type,
+        agent: event.agent || '—',
+        status: event.status,
+        detail: [text, meta].filter(Boolean).join(' — '),
+        latency: latencyOf(event),
+        tokens: tokensOf(event),
+      },
     }
   })
 }

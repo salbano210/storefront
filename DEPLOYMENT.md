@@ -129,8 +129,9 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
    hand it back.
 
 1. `/` → pick **Kathryn Bigelow** → ask for the Barrier Repair Serum → she is eligible, so
-   the agent asks her to confirm the address on file → **`/logs`** shows the transcript:
-   the criteria table, then the `address_validated` bucket, then the order.
+   the agent asks her to confirm the address on file → **`/logs`** shows it in rows: filter to
+   her conversation, then open the `criteria_evaluated` row for the criteria table, the
+   `address_validated` row, and the `gift_issued` row for the order.
 2. `/` → pick **Paul Thomas Anderson** → ask for the same serum → he is refused, and the reply names
    the **Discovery Set**, the one gift he does qualify for. That is `find_available_gifts` doing its job.
 3. `/` → pick **Peter Bogdanovich** → claim 500k followers → show the `guardrail_blocked` event using the

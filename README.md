@@ -247,7 +247,7 @@ The second asserts that a request naming no product gets a question rather than 
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
 | **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it; where 21 days holds fewer than 20 decisions the window widens backwards (to 60 days) rather than drawing a point from a handful. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
-| **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered, the escalation trigger), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Escalated conversations are marked in the list, and an admin can hand one back to the agent. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
+| **Agent logs** (`/logs`) | A row table, not a feed. **Events** (the default) is the flat stream: one row per event with its time, whether the conversation is sample or live, the creator, type, agent, status, summary, and the model's own latency, tokens and cost. **Turns** is the same stream grouped by creator message, with the decision it produced and its span. Open any row for the fields that did not fit a column, the criteria table where the payload has one, and the payload exactly as the agent recorded it. Escalated conversations are marked in the conversation filter, and an admin can hand one back to the agent. Filter by creator, conversation, agent or event type, or pause the live tail. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
 ### What the analytics numbers mean
@@ -651,10 +651,11 @@ backend/
   tests/           150 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
-  src/components/  Transcript, transcriptModel (its reading logic, no React),
-                   analyticsModel (chart geometry, no React), Chart (the SVG
-                   renderers), EventTimeline, CriteriaTable, CriteriaBuilder,
-                   GiftRows, AdminFields, ui
+  src/components/  LogTable (the row table both log views use), EventTable,
+                   TurnTable, EventDetail, logModel (columns, rows and wording,
+                   no React), analyticsModel (chart geometry, no React), Chart
+                   (the SVG renderers), CriteriaTable, CriteriaBuilder, GiftRows,
+                   AdminFields, ui
 scripts/           smoke_demo.py, debug_turn.py, seed_history.py
 render.yaml, Dockerfile, DEPLOYMENT.md
 ```

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, formatters } from '../api'
 import { useSession } from '../session.jsx'
-import EventTimeline from '../components/EventTimeline.jsx'
-import Transcript from '../components/Transcript.jsx'
-import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
+import EventTable from '../components/EventTable.jsx'
+import TurnTable from '../components/TurnTable.jsx'
+import { Badge, EmptyState, ErrorNote, Spinner } from '../components/ui.jsx'
 
 const EMPTY_FILTERS = {
   creator_id: '',
@@ -20,8 +20,7 @@ export default function Logs() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [live, setLive] = useState(true)
-  const [view, setView] = useState('transcript')
-  const [selectedId, setSelectedId] = useState(null)
+  const [view, setView] = useState('events')
   const [passcodeDraft, setPasscodeDraft] = useState('')
   const lastIdRef = useRef(0)
 
@@ -133,17 +132,17 @@ export default function Logs() {
         <div className="tabs">
           <button
             type="button"
-            className={`tab ${view === 'transcript' ? 'active' : ''}`}
-            onClick={() => setView('transcript')}
+            className={`tab ${view === 'events' ? 'active' : ''}`}
+            onClick={() => setView('events')}
           >
-            Transcript
+            Events
           </button>
           <button
             type="button"
-            className={`tab ${view === 'raw' ? 'active' : ''}`}
-            onClick={() => setView('raw')}
+            className={`tab ${view === 'turns' ? 'active' : ''}`}
+            onClick={() => setView('turns')}
           >
-            Raw events
+            Turns
           </button>
         </div>
 
@@ -223,17 +222,17 @@ export default function Logs() {
             className={`btn btn-ghost btn-sm ${live ? 'active' : ''}`}
             onClick={() => setLive((value) => !value)}
           >
-            {live ? '⏸ Pause live' : '▶ Resume live'}
+            {live ? 'Pause live' : 'Resume live'}
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => load(true)}>
-            ↻ Refresh
+            Refresh
           </button>
           {filters.conversation_id && (
             <a
               className="btn btn-ghost btn-sm"
               href={`/api/conversations/${filters.conversation_id}/export`}
             >
-              ↓ Transcript JSON
+              Export JSON
             </a>
           )}
           <Badge tone="amber">all sessions</Badge>
@@ -274,10 +273,17 @@ export default function Logs() {
       <ErrorNote error={needsPasscode ? null : error} onRetry={() => load(true)} />
       {loading && <Spinner label="Loading events" />}
 
-      {view === 'transcript' ? (
-        <Transcript events={events} />
+      {!loading && !events.length && (
+        <EmptyState title="No events yet">
+          Open the creator chat, send a message, and every routing decision, tool call and
+          guardrail check will appear here in real time.
+        </EmptyState>
+      )}
+
+      {view === 'events' ? (
+        <EventTable events={events} conversations={conversations} />
       ) : (
-        <EventTimeline events={events} selectedId={selectedId} onSelect={setSelectedId} />
+        <TurnTable events={events} conversations={conversations} />
       )}
     </div>
   )

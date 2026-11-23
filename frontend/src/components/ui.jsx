@@ -46,16 +46,24 @@ export function EmptyState({ title, children, action }) {
   )
 }
 
-export function JsonBlock({ value, label = 'JSON', open = false }) {
-  const [expanded, setExpanded] = useState(open)
-  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+/**
+ * A definition list of labelled values, skipping the rows with nothing to say.
+ * Used by the log detail panes, where most fields are absent on most events.
+ */
+export function Facts({ rows, className = 'log-facts' }) {
+  const shown = rows.filter(
+    (row) => row.value !== null && row.value !== undefined && row.value !== ''
+  )
+  if (!shown.length) return null
   return (
-    <div className="json">
-      <button type="button" className="json-toggle" onClick={() => setExpanded((v) => !v)}>
-        {expanded ? '▾' : '▸'} {label}
-      </button>
-      {expanded && <pre className="json-body">{text}</pre>}
-    </div>
+    <dl className={className}>
+      {shown.map((row) => (
+        <div key={row.label}>
+          <dt>{row.label}</dt>
+          <dd className={row.mono ? 'mono' : undefined}>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
