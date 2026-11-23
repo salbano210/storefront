@@ -71,7 +71,7 @@ function Axes({ chart }) {
 }
 
 /** A stacked bar chart with a labelled y-axis and value labels. */
-export function StackedBars({ build, series }) {
+export function StackedBars({ build }) {
   const [ref, width] = useChartWidth()
   const chart = width ? build(width) : null
 
