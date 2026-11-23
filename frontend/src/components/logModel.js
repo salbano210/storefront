@@ -238,6 +238,20 @@ export function conversationRows(conversations = []) {
   })
 }
 
+/**
+ * Which conversation the pane should be showing.
+ *
+ * The index is chronological, so the conversation somebody just had is the last one.
+ * That is the one to open, and the one to keep following while new conversations
+ * arrive -- until they click a row, at which point the choice is theirs and the page
+ * stops moving under them.
+ */
+export function pickSelection(conversations = [], currentId, pinned = false) {
+  if (!conversations.length) return null
+  if (pinned && conversations.some((item) => item.id === currentId)) return currentId
+  return conversations[conversations.length - 1].id
+}
+
 /** The step column: who or what produced the row. */
 function stepFor(event) {
   const payload = event.payload || {}

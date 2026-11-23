@@ -12,17 +12,15 @@ import { conversationRows } from './logModel.js'
 export default function ConversationList({ conversations, selectedId, onSelect }) {
   const rows = useMemo(() => conversationRows(conversations), [conversations])
   const navRef = useRef(null)
-  const scrolledRef = useRef(false)
 
-  // The list runs oldest to newest, so the conversation you just had is at the
-  // bottom. Bring it into view once, and only once: after that the list belongs to
-  // whoever is scrolling it.
+  // The list runs oldest to newest, so the conversation being shown is somewhere down
+  // the list. Bring it into view when the selection changes -- which, while the pane
+  // is following the newest conversation, is what keeps a conversation somebody just
+  // had visible instead of 240 rows below the fold.
   useEffect(() => {
-    if (scrolledRef.current || !selectedId) return
+    if (!selectedId) return
     const node = navRef.current?.querySelector('.conv-row.selected')
-    if (!node) return
-    node.scrollIntoView({ block: 'nearest' })
-    scrolledRef.current = true
+    if (node) node.scrollIntoView({ block: 'nearest' })
   }, [selectedId, rows.length])
 
   if (!rows.length) {

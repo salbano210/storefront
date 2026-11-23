@@ -42,6 +42,10 @@ export async function api(path, { method = 'GET', body, withAdmin = true } = {})
     method,
     headers,
     credentials: 'same-origin',
+    // The logs page polls the same URLs for as long as it is open. Without this a
+    // browser is free to answer from its own cache, and "Refresh" stops meaning
+    // anything -- which looks exactly like the log not updating.
+    cache: 'no-store',
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 

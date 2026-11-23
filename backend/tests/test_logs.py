@@ -61,6 +61,24 @@ async def test_logs_cover_every_session(client, use_fake_llm):
         assert (await other.get(f"/api/conversations/{conversation_id}")).status_code == 404
 
 
+async def test_the_index_is_chronological_so_the_newest_is_last(client, use_fake_llm):
+    """The logs page opens the last entry in the index and follows it as new
+    conversations arrive, so the order is a contract rather than a detail."""
+    use_fake_llm()
+    first = await _chat(client)
+    second = await _chat(client, "Can I get the Barrier Repair Serum?")
+
+    meta = (await client.get("/api/logs/meta")).json()
+    ids = [item["id"] for item in meta["conversations"]]
+    assert ids == [
+        first.json()["conversation_id"],
+        second.json()["conversation_id"],
+    ]
+
+    stamps = [item["created_at"] for item in meta["conversations"]]
+    assert stamps == sorted(stamps), "the index has to read in time order"
+
+
 async def test_host_key_never_reaches_the_logs(client, use_fake_llm):
     """The only key in play is the host key, and it must never be persisted."""
     from app import settings

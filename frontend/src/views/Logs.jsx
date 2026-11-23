@@ -5,6 +5,7 @@ import { useSession } from '../session.jsx'
 import ConversationDetail from '../components/ConversationDetail.jsx'
 import ConversationList from '../components/ConversationList.jsx'
 import { ErrorNote } from '../components/ui.jsx'
+import { pickSelection } from '../components/logModel.js'
 
 /* ---------------------------------------------------------------------------
  * The logs: a conversation browser.
@@ -33,6 +34,10 @@ export default function Logs() {
   const [live, setLive] = useState(true)
   const [passcodeDraft, setPasscodeDraft] = useState('')
   const lastIdRef = useRef(0)
+  // True once somebody has picked a conversation themselves. Until then the pane
+  // follows the newest one, so a conversation started in another tab shows up here
+  // without anyone hunting for it.
+  const pinnedRef = useRef(false)
 
   const conversations = meta?.conversations || []
   const selected = conversations.find((item) => item.id === selectedId) || null
@@ -40,6 +45,7 @@ export default function Logs() {
   const loadIndex = useCallback(async () => {
     const data = await api('/api/logs/meta')
     setMeta(data)
+    setSelectedId((current) => pickSelection(data.conversations, current, pinnedRef.current))
     return data
   }, [])
 
@@ -63,13 +69,7 @@ export default function Logs() {
   // The index, once. The newest conversation opens for you, so the page is never
   // half empty on arrival.
   useEffect(() => {
-    loadIndex()
-      .then((data) => {
-        if (data.conversations.length) {
-          setSelectedId((current) => current || data.conversations[0].id)
-        }
-      })
-      .catch(setError)
+    loadIndex().catch(setError)
   }, [loadIndex])
 
   useEffect(() => {
@@ -92,14 +92,25 @@ export default function Logs() {
     return () => clearInterval(timer)
   }, [live, selectedId, loadEvents, loadIndex])
 
+  // Refresh means "show me what has happened since": it drops any pinned selection and
+  // opens the newest conversation, which is where a conversation somebody just had
+  // will be.
   async function refresh() {
     setError(null)
+    pinnedRef.current = false
     try {
-      await loadIndex()
-      await loadEvents(selectedId)
+      const data = await loadIndex()
+      const next = pickSelection(data.conversations, null, false)
+      if (next) await loadEvents(next)
     } catch (err) {
       setError(err)
     }
+  }
+
+  // Clicking a row is a choice, so the pane stops following the newest one.
+  function select(conversationId) {
+    pinnedRef.current = true
+    setSelectedId(conversationId)
   }
 
   async function release() {
@@ -141,7 +152,12 @@ export default function Logs() {
           >
             {live ? 'Pause live' : 'Resume live'}
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={refresh}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={refresh}
+            title="Reload the conversation list and open the most recent conversation"
+          >
             Refresh
           </button>
         </div>
@@ -178,7 +194,7 @@ export default function Logs() {
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={select}
         />
         <ConversationDetail
           conversation={selected}
