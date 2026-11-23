@@ -14,6 +14,7 @@ export const OUTCOMES = {
   gift_suggested: { tone: 'slate', icon: '🔗', label: 'Product link shared' },
   details_required: { tone: 'amber', icon: '…', label: 'Eligible — more details needed' },
   inquiry: { tone: 'slate', icon: '💬', label: 'Answered' },
+  escalated: { tone: 'slate', icon: '🧑', label: 'Handed to a human' },
 }
 
 export const STEP_ICONS = {
@@ -29,6 +30,8 @@ export const STEP_ICONS = {
   guardrail_blocked: '🛡',
   guardrail_adjusted: '✎',
   injection_suspected: '⚠',
+  escalated: '🧑',
+  escalation_released: '↩',
   gift_issued: '🎁',
   budget_blocked: '⛔',
 }
@@ -37,6 +40,7 @@ const AGENT_LABELS = {
   router_agent: 'intent agent',
   gift_request_agent: 'gifting agent',
   general_handler: 'front desk',
+  escalation: 'escalation',
 }
 
 export function humanAgent(agent) {
@@ -173,6 +177,18 @@ export function stepSentence(event) {
         payload.address_changed ? ' · address changed' : ''
       }`,
     }
+  }
+  if (event.type === 'escalated') {
+    return {
+      text: `Handed the conversation to a human — ${payload.detail}`,
+      meta:
+        payload.kind === 'metric'
+          ? `profile rule · ${payload.reason}`
+          : `creator said this · ${payload.reason}`,
+    }
+  }
+  if (event.type === 'escalation_released') {
+    return { text: 'A human handed the conversation back to the agent', meta: event.summary }
   }
   if (event.type === 'guardrail_blocked') {
     return {

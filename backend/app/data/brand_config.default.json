@@ -1,4 +1,5 @@
 {
+  "schema_version": 4,
   "brand": {
     "name": "Summer Soft Skincare",
     "description": "A premium skincare brand built on barrier-repair science for sensitive skin.",
@@ -48,6 +49,22 @@
           { "metric": "categories", "operator": "includes_any", "value": ["beauty", "skincare"] }
         ]
       }
+    ]
+  },
+  "escalation": {
+    "notes": "Escalation takes a conversation off the agent and leaves it to a person. Either trigger fires it, and it is evaluated in Python before the model runs, so an escalated turn costs nothing and cannot be talked out of. Reasons are internal -- they name the trigger for whoever picks it up, and are never quoted back to the creator.",
+    "reply": "Thanks for flagging that — I'm passing this conversation to a member of the team, who will pick it up from here. You don't need to do anything else.",
+    "keywords": [
+      { "phrase": "speak to a human", "reason": "Creator asked for a person" },
+      { "phrase": "talk to a person", "reason": "Creator asked for a person" },
+      { "phrase": "allergic reaction", "reason": "Safety complaint — a human must handle this" },
+      { "phrase": "lawyer", "reason": "Legal threat — route to the legal team" },
+      { "phrase": "refund", "reason": "Billing question — the agent has no billing tools" },
+      { "phrase": "journalist", "reason": "Press enquiry — route to comms" }
+    ],
+    "metrics": [
+      { "metric": "followers", "operator": "gte", "value": 500000, "reason": "VIP creator — route to the account team" },
+      { "metric": "brand_attributed_revenue", "operator": "gte", "value": 100000, "reason": "High-value account — handle personally" }
     ]
   },
   "agents": {

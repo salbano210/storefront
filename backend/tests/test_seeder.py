@@ -20,10 +20,11 @@ from app.services import seeder
 
 # pytest runs in asyncio auto mode, so only the tests that need it are async.
 
-# Every recipe is planned at this count, so every outcome appears.
-FULL = 40
-# A lighter count for the tests whose assertions don't depend on the full mix.
-LIGHT = 14
+# Derived from the recipes, so adding one cannot silently make these too small:
+# `count` is clamped to at least the number of recipes, and every recipe is
+# planned exactly once when the count equals the total weight.
+FULL = sum(recipe.weight for recipe in seeder.RECIPES)
+LIGHT = len(seeder.RECIPES)
 
 
 async def seed(client, **body) -> dict:
@@ -68,6 +69,7 @@ async def test_it_fills_the_dashboard_with_a_realistic_mix(client, use_fake_llm)
         "gift_declined",
         "details_required",
         "inquiry",
+        "escalated",
     }
     # Spread across creators, so the logs' creator filter has something in it.
     assert len(summary["by_creator"]) == 5

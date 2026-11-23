@@ -122,6 +122,7 @@ async def touch_conversation(
     intent: str | None = None,
     disposition: str | None = None,
     last_outcome: str | None = None,
+    status: str | None = None,
 ) -> Conversation:
     if clear_pending:
         conversation.pending_agent = None
@@ -135,6 +136,8 @@ async def touch_conversation(
         conversation.disposition = disposition
     if last_outcome is not None:
         conversation.last_outcome = last_outcome
+    if status is not None:
+        conversation.status = status
     conversation.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(conversation)

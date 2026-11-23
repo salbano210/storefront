@@ -38,6 +38,7 @@ DISPOSITION_LABELS = {
     "gift_request_approved": "Gift request approved",
     "gift_request_denied": "Gift request denied",
     "other": "Other",
+    "escalated": "Escalated to a human",
 }
 
 # Why a conversation landed in "other" -- the raw outcome behind the bucket.
@@ -48,6 +49,7 @@ OUTCOME_LABELS = {
     "gift_suggested": "Product suggested",
     "details_required": "Awaiting details",
     "inquiry": "Answered a question",
+    "escalated": "Escalated to a human",
     "none": "No outcome yet",
 }
 

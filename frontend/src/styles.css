@@ -843,6 +843,21 @@ code,
   margin-left: auto;
 }
 
+/* Shown in the chat once a conversation has left the agent for a person. The
+ * composer stays open, because the creator can still write -- the messages are
+ * just held for whoever picked it up. */
+.escalated-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--slate-soft);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
 .composer {
   display: flex;
   gap: 10px;
@@ -1883,6 +1898,17 @@ textarea {
 
 .criterion .btn {
   margin-left: auto;
+}
+
+.criterion-reason {
+  flex: 1 1 200px;
+  min-width: 170px;
+}
+
+/* A section body that is a list rather than a grid of fields (escalation
+ * keywords, profile rules) spans every column. */
+.admin-wide {
+  grid-column: 1 / -1;
 }
 
 .value-pair {

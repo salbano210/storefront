@@ -18,6 +18,7 @@ export const DISPOSITION_TONES = {
   gift_request_approved: 'sage',
   gift_request_denied: 'red',
   other: 'slate',
+  escalated: 'amber',
 }
 
 export const OUTCOME_TONES = {
@@ -27,6 +28,7 @@ export const OUTCOME_TONES = {
   gift_suggested: 'slate',
   details_required: 'amber',
   inquiry: 'slate',
+  escalated: 'slate',
   none: 'muted',
 }
 

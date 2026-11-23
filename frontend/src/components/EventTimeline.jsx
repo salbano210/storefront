@@ -6,6 +6,7 @@ const AGENT_LABELS = {
   router_agent: 'Intent agent',
   gift_request_agent: 'Gift request agent',
   general_handler: 'Front desk',
+  escalation: 'Escalation',
   admin: 'Admin',
   guard: 'Guard',
 }
@@ -14,6 +15,7 @@ const AGENT_TONES = {
   router_agent: 'slate',
   gift_request_agent: 'coral',
   general_handler: 'amber',
+  escalation: 'slate',
   admin: 'ink',
   guard: 'red',
 }
@@ -30,6 +32,8 @@ const EVENT_TONES = {
   tool_call_failed: 'red',
   guardrail_blocked: 'red',
   guardrail_adjusted: 'amber',
+  escalated: 'slate',
+  escalation_released: 'sage',
   gift_issued: 'coral',
   message_sent: 'coral',
   llm_response: 'muted',
@@ -72,6 +76,29 @@ function Detail({ event }) {
           Evaluated against verified profile values only. Creator-stated numbers were ignored.
         </p>
       </>
+    )
+  }
+
+  if (event.type === 'escalated') {
+    return (
+      <div className="escalation-detail">
+        <div className="receipt">
+          <div>
+            <span className="receipt-key">Trigger</span>
+            <span className="badge badge-slate">{payload.kind}</span>
+          </div>
+          <div>
+            <span className="receipt-key">{payload.kind === 'metric' ? 'Rule' : 'Phrase'}</span>
+            <span className="mono">{payload.detail}</span>
+          </div>
+          <div>
+            <span className="receipt-key">For the human</span>
+            <span>{payload.reason}</span>
+          </div>
+        </div>
+        {payload.check && <CriteriaTable checks={[payload.check]} />}
+        <p className="detail-hint">{payload.note}</p>
+      </div>
     )
   }
 

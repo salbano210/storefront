@@ -8,11 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import orchestrator
 from ..db import get_db
 from ..models import Conversation, Event, Message
+from ..orchestrator import ESCALATED_STATUS
+from ..services import config_manager
 from ..services import conversation_store as store
 from ..services import data_store, seeder
-from ..services.event_logger import ALL_EVENT_TYPES
+from ..services.event_logger import ALL_EVENT_TYPES, EventLogger
+from ..services import event_logger as events
 from .deps import event_out, is_admin, session_id
 
 router = APIRouter(prefix="/api", tags=["logs"])
@@ -121,6 +125,54 @@ async def logs_meta(
     }
 
 
+@router.delete("/conversations/{conversation_id}/escalation")
+async def release_escalation(
+    conversation_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    sid: str = Depends(session_id),
+) -> dict:
+    """Hand a conversation back to the agent.
+
+    Admin-gated, because it is the human's side of the hand-off: whoever picked the
+    conversation up is the only one who can decide the agent should have it again.
+    """
+    if not is_admin(request):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "admin_passcode_required",
+                "message": "Enter the demo admin passcode to take a conversation back.",
+            },
+        )
+
+    conversation = await store.get_conversation(db, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    if conversation.status != ESCALATED_STATUS:
+        return {"released": False, "reason": "not_escalated", "status": conversation.status}
+
+    version, _ = await config_manager.get_current(db)
+    await store.touch_conversation(db, conversation, status="active")
+    await EventLogger(
+        db,
+        session_id=sid,
+        conversation_id=conversation.id,
+        creator_id=conversation.creator_id,
+        config_version=version,
+    ).log(
+        events.ESCALATION_RELEASED,
+        agent="admin",
+        summary="A human handed the conversation back to the agent",
+        payload={
+            "released_by": "admin",
+            "previous_status": ESCALATED_STATUS,
+            "status": "active",
+        },
+    )
+    return {"released": True, "status": "active"}
+
+
 async def _creator_name(db: AsyncSession, creator_id: str) -> str:
     profile = await data_store.get_creator(db, creator_id)
     return profile.name if profile else creator_id
@@ -145,6 +197,8 @@ async def list_conversations(
                 "updated_at": store.iso(item.updated_at),
                 "message_count": int(message_count or 0),
                 "config_version": item.config_version,
+                "status": item.status,
+                "source": item.source or seeder.LIVE_SOURCE,
             }
         )
     return {"conversations": out}

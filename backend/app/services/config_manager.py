@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import settings
 from ..models import ConfigVersion
-from ..schemas import BrandConfig
+from ..schemas import CONFIG_SCHEMA_VERSION, BrandConfig
 from . import data_store
 
 DEFAULT_CONFIG_PATH = data_store.DATA_DIR / "brand_config.default.json"
@@ -55,29 +55,44 @@ def validate_config_payload(payload: dict) -> BrandConfig:
 async def ensure_seeded(db: AsyncSession) -> tuple[int, BrandConfig]:
     """Create version 1 from the repo default if the table is empty.
 
-    Also self-heals: if the newest stored configuration no longer validates
-    against the current schema (e.g. the schema changed between deploys), a
-    fresh version is seeded from the repo defaults rather than crashing every
-    request.
+    Also self-heals, in two ways:
+
+    * if the newest stored configuration no longer validates against the current
+      schema (e.g. the schema changed between deploys), a fresh version is seeded
+      from the repo defaults rather than crashing every request;
+    * if it validates but was written for an older ``schema_version``, the shipped
+      defaults have moved on (a new config block, new seeded rules), and the stored
+      one would silently miss them. Reseeding is the honest option: a stored config
+      is a copy of defaults plus admin edits, and there is no way to know which
+      edits matter.
     """
     existing = await db.scalar(select(ConfigVersion).order_by(desc(ConfigVersion.version)).limit(1))
     if existing:
+        reason = None
+        config = None
         try:
-            return existing.version, BrandConfig(**json.loads(existing.config_json))
+            config = BrandConfig(**json.loads(existing.config_json))
+            if config.schema_version != CONFIG_SCHEMA_VERSION:
+                reason = (
+                    f"stored v{existing.version} was written for config schema "
+                    f"v{config.schema_version}, this build ships v{CONFIG_SCHEMA_VERSION}"
+                )
         except (ValidationError, json.JSONDecodeError) as exc:
-            print(
-                f"[config] stored v{existing.version} no longer validates ({exc}); "
-                "seeding a new version from repo defaults"
-            )
-            config = load_default_config()
-            row = ConfigVersion(
-                config_json=config.model_dump_json(),
-                updated_by=f"reseed-after-schema-change (was v{existing.version})",
-            )
-            db.add(row)
-            await db.commit()
-            await db.refresh(row)
-            return row.version, config
+            reason = f"stored v{existing.version} no longer validates ({exc})"
+
+        if reason is None:
+            return existing.version, config
+
+        print(f"[config] {reason}; seeding a new version from repo defaults")
+        config = load_default_config()
+        row = ConfigVersion(
+            config_json=config.model_dump_json(),
+            updated_by=f"reseed-after-schema-change (was v{existing.version})",
+        )
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return row.version, config
     config = load_default_config()
     row = ConfigVersion(config_json=config.model_dump_json(), updated_by="seed")
     db.add(row)

@@ -89,6 +89,16 @@ export default function Logs() {
 
   const conversations = meta?.conversations || []
   const needsPasscode = error?.code === 'admin_passcode_required'
+  const selected = conversations.find((item) => item.id === filters.conversation_id)
+
+  async function release() {
+    try {
+      await api(`/api/conversations/${filters.conversation_id}/escalation`, { method: 'DELETE' })
+      await load(true)
+    } catch (err) {
+      setError(err)
+    }
+  }
 
   return (
     <div className="page logs-page">
@@ -181,6 +191,7 @@ export default function Logs() {
             {conversations.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.source === 'seeded' ? '[sample] ' : ''}
+                {item.status === 'escalated' ? '[with a human] ' : ''}
                 {item.creator_name} · {formatters.dateTime(item.created_at)}
               </option>
             ))}
@@ -241,6 +252,12 @@ export default function Logs() {
             </a>
           )}
           {filters.scope === 'all' && <Badge tone="amber">all sessions</Badge>}
+          {selected?.status === 'escalated' && <Badge tone="slate">with a human</Badge>}
+          {hasPasscode && selected?.status === 'escalated' && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={release}>
+              ↩ Return to the agent
+            </button>
+          )}
         </div>
       </div>
 

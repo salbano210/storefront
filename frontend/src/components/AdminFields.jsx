@@ -59,6 +59,63 @@ export function round(value) {
   return Math.round(Number(value) * 1000) / 1000
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Escalation keywords: a phrase in the creator's own message that hands the
+ * conversation to a human, plus the internal reason for whoever picks it up.
+ * ------------------------------------------------------------------------- */
+export function KeywordRows({ keywords = [], onChange }) {
+  function patch(index, next) {
+    onChange(keywords.map((item, i) => (i === index ? { ...item, ...next } : item)))
+  }
+
+  return (
+    <div className="rows">
+      {keywords.map((item, index) => (
+        <div className="row-card" key={index}>
+          <div className="admin-grid">
+            <Field label="Phrase" hint="Matched as whole words, so 'refund' catches 'refunds'.">
+              <input
+                value={item.phrase || ''}
+                placeholder="speak to a human"
+                onChange={(event) => patch(index, { phrase: event.target.value })}
+              />
+            </Field>
+            <Field label="Reason" hint="Internal: who should pick this up, and why.">
+              <input
+                value={item.reason || ''}
+                placeholder="Creator asked for a person"
+                onChange={(event) => patch(index, { reason: event.target.value })}
+              />
+            </Field>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm gift-remove"
+            onClick={() => onChange(keywords.filter((_, i) => i !== index))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      {!keywords.length && (
+        <p className="muted small">
+          No keywords — nothing in a creator&apos;s message escalates on its own.
+        </p>
+      )}
+
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={() => onChange([...keywords, { phrase: '', reason: '' }])}
+      >
+        + Add keyword
+      </button>
+    </div>
+  )
+}
+
 export function defaultFor(metric, operator) {
   if (!metric) return ''
   if (metric.shape === 'list') return metric.default_ideal || []

@@ -22,14 +22,18 @@ from .services import event_logger as events
 from .services.event_logger import EventLogger
 from .services.llm_client import LLMClient
 from .tools.registry import ToolContext
-from . import guardrails
+from . import escalation, guardrails
 
 TERMINAL_OUTCOMES = {
     "gift_issued",
     "gift_duplicate",
     "gift_declined",
     "gift_suggested",
+    "escalated",
 }
+
+# Conversations in this state are off the agent and with a human.
+ESCALATED_STATUS = "escalated"
 
 # Agents that own a task. When one of these has not finished, the conversation is
 # still theirs -- so the creator's next message resumes it rather than being
@@ -39,21 +43,29 @@ TASK_AGENTS = {"gift_request_agent"}
 # ---------------------------------------------------------------------------
 # Analytics vocabulary
 # ---------------------------------------------------------------------------
-# The three dispositions the dashboard reports. A conversation counts as approved
-# or denied only when a gifting decision actually landed; everything else --
-# questions, browsing, and conversations still collecting details -- is "other".
-# The raw outcome type is kept on the event log, so "other" can be broken down.
+# The dispositions the dashboard reports. A conversation counts as approved or
+# denied only when a gifting decision actually landed; "escalated" means it left
+# the agent for a human, which is a different thing from an answer; everything
+# else -- questions, browsing, conversations still collecting details -- is
+# "other". The raw outcome type is kept on the event log, so "other" can be
+# broken down.
 DISPOSITION_BY_OUTCOME = {
     "gift_issued": "gift_request_approved",
     "gift_duplicate": "gift_request_approved",
     "gift_declined": "gift_request_denied",
+    "escalated": "escalated",
 }
 
-DISPOSITIONS = ("gift_request_approved", "gift_request_denied", "other")
+DISPOSITIONS = (
+    "gift_request_approved",
+    "gift_request_denied",
+    "other",
+    "escalated",
+)
 
 
 def disposition_for(outcome_type: str) -> str:
-    """Map a turn outcome onto one of the three reported dispositions."""
+    """Map a turn outcome onto one of the reported dispositions."""
     return DISPOSITION_BY_OUTCOME.get(outcome_type, "other")
 
 
@@ -277,6 +289,78 @@ def _extract_outcome(
     return outcome
 
 
+async def _hold_escalated(
+    db: AsyncSession,
+    *,
+    conversation: Conversation,
+    logger: EventLogger,
+    config: BrandConfig,
+    start_id: int,
+    reason: escalation.Escalation | None = None,
+    already_escalated: bool = False,
+) -> TurnResult:
+    """Leave the conversation with a human, and say so.
+
+    Deterministic: no router, no model call, no tools. The same path serves the
+    turn that escalates and every turn after it, which is what stops an escalated
+    conversation from being talked back into the agent's hands.
+
+    The reply is the configured holding message. The *reason* is not quoted back:
+    it exists for whoever picks the conversation up, and "audience quality needs a
+    look" is not something to say to the person it is about.
+    """
+    intent = conversation.intent or ""
+    reply = config.escalation.reply
+    outcome: dict[str, Any] = {"type": "escalated"}
+    if reason is not None:
+        outcome |= {
+            "trigger": reason.kind,
+            "reason": reason.reason,
+            "detail": reason.detail,
+        }
+    else:
+        outcome["already_escalated"] = True
+
+    await store.append_message(
+        db, conversation_id=conversation.id, role="agent", content=reply, agent="escalation"
+    )
+    await logger.log(
+        events.MESSAGE_SENT,
+        agent="escalation",
+        summary=(
+            "Holding reply sent -- outcome=escalated "
+            f"({'already with a human' if already_escalated else 'handed off'})"
+        ),
+        payload={
+            "reply": reply,
+            "outcome": outcome,
+            "tool_calls": [],
+            "awaiting_creator_answer": False,
+        },
+    )
+
+    usage = await _turn_usage(db, conversation.id, start_id)
+    await store.touch_conversation(
+        db,
+        conversation,
+        # The agent does not own this conversation any more, so nothing resumes it.
+        clear_pending=True,
+        status=ESCALATED_STATUS,
+        disposition=disposition_for("escalated"),
+        last_outcome="escalated",
+    )
+    return TurnResult(
+        conversation_id=conversation.id,
+        reply=reply,
+        agent="escalation",
+        intent=intent,
+        confidence=1.0,
+        outcome=outcome,
+        usage=usage,
+        pending_agent=None,
+    )
+
+
 async def handle_turn(
     db: AsyncSession,
     *,
@@ -317,6 +401,47 @@ async def handle_turn(
     await store.append_message(
         db, conversation_id=conversation.id, role="creator", content=user_message
     )
+
+    # Escalation comes before anything else: no router, no model, no tools. An
+    # escalated turn is a hand-off, not an answer, so the cheapest and most
+    # reliable version of it is the one that cannot be reasoned with.
+    if conversation.status == ESCALATED_STATUS:
+        return await _hold_escalated(
+            db,
+            conversation=conversation,
+            logger=logger,
+            config=config,
+            start_id=start_id,
+            already_escalated=True,
+        )
+
+    reason = escalation.evaluate(creator, config, user_message)
+    if reason is not None:
+        await logger.log(
+            events.ESCALATED,
+            agent="escalation",
+            status="blocked",
+            summary=reason.summary(),
+            payload={
+                "kind": reason.kind,
+                "reason": reason.reason,
+                "detail": reason.detail,
+                "check": reason.check,
+                "config": config.escalation.describe(),
+                "note": (
+                    "Evaluated in Python before the model ran. No model call was made and no tool "
+                    "was available to the agent for this turn."
+                ),
+            },
+        )
+        return await _hold_escalated(
+            db,
+            conversation=conversation,
+            logger=logger,
+            config=config,
+            start_id=start_id,
+            reason=reason,
+        )
 
     # Flag instruction-override attempts for the audit log. This never blocks a
     # message -- it just makes the attempt visible, and the deterministic

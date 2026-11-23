@@ -172,6 +172,7 @@ class SimulatedModel:
         router_returns_garbage: bool = False,
         obey_injection: bool = False,
         browse_without_query: bool = False,
+        claim_escalation: bool = False,
         model: str = "fake/model",
         logger: EventLogger | None = None,
     ) -> None:
@@ -179,6 +180,9 @@ class SimulatedModel:
         self.router_returns_garbage = router_returns_garbage
         self.obey_injection = obey_injection
         self.browse_without_query = browse_without_query
+        # A model that says it referred the creator to a person. It has no tool for
+        # that, so the guardrails catch it.
+        self.claim_escalation = claim_escalation
         self.model = model
         # When set, every call is written to the audit trail exactly as a real one
         # is, so a seeded transcript has the same shape as a live one.
@@ -420,6 +424,10 @@ class SimulatedModel:
 
     # -- plain text --------------------------------------------------------
     def _text(self, messages: list[dict[str, Any]]) -> LLMResult:
+        if self.claim_escalation:
+            return self._result(
+                "Understood — I've escalated this to a team member, who will be in touch shortly."
+            )
         results = _tool_results(messages)
         issued = _find(results, "issue_gift")
         if issued is not None:

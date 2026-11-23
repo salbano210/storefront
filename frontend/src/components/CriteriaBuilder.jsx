@@ -7,8 +7,19 @@ import { ValueInput, defaultFor } from './AdminFields.jsx'
  * registry served at /api/config/metrics. Both the operator list and the value
  * input change with the metric's shape, so an invalid rule is hard to build --
  * and the server rejects one anyway.
+ *
+ * Escalation rules carry a `reason` as well, which is why the reason input is
+ * opt-in: the same builder serves gift criteria and profile escalations, and the
+ * extra field is preserved either way because rows are patched, not replaced.
  * ------------------------------------------------------------------------- */
-export default function CriteriaBuilder({ rules = [], metrics = [], onChange }) {
+export default function CriteriaBuilder({
+  rules = [],
+  metrics = [],
+  onChange,
+  reasonPlaceholder = '',
+  emptyText = 'No criteria — every creator qualifies for this gift.',
+  addLabel = '+ Add criterion',
+}) {
   const byKey = useMemo(
     () => Object.fromEntries(metrics.map((metric) => [metric.key, metric])),
     [metrics]
@@ -70,6 +81,15 @@ export default function CriteriaBuilder({ rules = [], metrics = [], onChange }) 
               value={rule.value}
               onChange={(value) => patch(index, { value })}
             />
+            {reasonPlaceholder && (
+              <input
+                type="text"
+                className="criterion-reason"
+                placeholder={reasonPlaceholder}
+                value={rule.reason || ''}
+                onChange={(event) => patch(index, { reason: event.target.value })}
+              />
+            )}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -81,12 +101,10 @@ export default function CriteriaBuilder({ rules = [], metrics = [], onChange }) 
         )
       })}
 
-      {!rules.length && (
-        <p className="muted small">No criteria — every creator qualifies for this gift.</p>
-      )}
+      {!rules.length && <p className="muted small">{emptyText}</p>}
 
       <button type="button" className="btn btn-ghost btn-sm" onClick={add}>
-        + Add criterion
+        {addLabel}
       </button>
     </div>
   )

@@ -18,6 +18,7 @@ const OUTCOME_LABELS = {
   gift_suggested: { tone: 'slate', text: 'Gift suggested' },
   details_required: { tone: 'amber', text: 'Details needed' },
   inquiry: { tone: 'slate', text: 'Answered' },
+  escalated: { tone: 'slate', text: 'With a person' },
 }
 
 function outcomeFor(payload) {
@@ -33,6 +34,8 @@ function outcomeFor(payload) {
     const alternative = outcome.alternatives?.[0]?.name
     detail = alternative ? `${failed} · offered ${alternative}` : failed
   }
+  // The reason is internal, so the creator only ever sees that it was handed over.
+  if (outcome.type === 'escalated') detail = 'a member of the team'
   if (outcome.guardrail_blocks?.length) detail = `guardrail: ${outcome.guardrail_blocks[0].error}`
   return { ...meta, detail }
 }
@@ -47,6 +50,7 @@ export default function CreatorChat() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [lastTurn, setLastTurn] = useState(null)
+  const [escalated, setEscalated] = useState(false)
   const scrollRef = useRef(null)
 
   useEffect(() => {
@@ -73,6 +77,7 @@ export default function CreatorChat() {
         const transcript = await api(`/api/conversations/${existing.id}`)
         if (cancelled) return
         setConversationId(existing.id)
+        setEscalated(existing.status === 'escalated')
         setMessages(
           transcript.messages.map((message) => ({
             role: message.role,
@@ -106,6 +111,7 @@ export default function CreatorChat() {
       })
       setConversationId(payload.conversation_id)
       setLastTurn(payload)
+      setEscalated(payload.outcome?.type === 'escalated')
       setMessages((current) => [
         ...current,
         {
@@ -175,6 +181,7 @@ export default function CreatorChat() {
                 setMessages([])
                 setConversationId(null)
                 setLastTurn(null)
+                setEscalated(false)
                 setError(null)
               }}
             >
@@ -229,6 +236,16 @@ export default function CreatorChat() {
         </div>
 
         <ErrorNote error={error} />
+
+        {escalated && (
+          <div className="escalated-banner" role="status">
+            <span className="badge badge-slate">With a person</span>
+            <span>
+              A member of the Summer Soft Skincare team has this conversation. The assistant has
+              stopped replying — anything you send is held for them.
+            </span>
+          </div>
+        )}
 
         {outcome && (
           <div className="outcome-strip">

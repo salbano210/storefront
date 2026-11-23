@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { useSession } from '../session.jsx'
-import { Field, ModelsEditor, Section } from '../components/AdminFields.jsx'
+import { Field, KeywordRows, ModelsEditor, Section } from '../components/AdminFields.jsx'
+import CriteriaBuilder from '../components/CriteriaBuilder.jsx'
 import GiftRows from '../components/GiftRows.jsx'
 import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
 
@@ -16,6 +17,7 @@ const TREE = [
   { id: 'gifting', label: 'Gifting agent', group: 'Agents', hint: 'gifts and their criteria' },
   { id: 'router', label: 'Intent agent', group: 'Agents', hint: 'do we have an agent for this?' },
   { id: 'general_inquiry', label: 'Front desk', group: 'Agents', hint: 'everything else' },
+  { id: 'escalation', label: 'Escalation', hint: 'when a human takes over' },
   { id: 'models', label: 'Models', hint: 'which model runs each agent' },
 ]
 
@@ -440,6 +442,65 @@ export default function AdminConfig() {
                   onChange={(value) => update(['agents'], value)}
                 />
               </Section>
+            )}
+
+            {node === 'escalation' && (
+              <>
+                <Section
+                  title="Escalation"
+                  description="Takes a conversation off the agent and leaves it to a person. Either trigger fires it, and both are evaluated in Python before the model runs — so an escalated turn costs nothing and cannot be argued with."
+                >
+                  <Field
+                    label="What the creator is told"
+                    wide
+                    hint="Sent verbatim when a conversation is handed over. The reasons below are internal and are never quoted back."
+                  >
+                    <textarea
+                      rows={3}
+                      value={draft.escalation.reply || ''}
+                      onChange={(event) => update(['escalation', 'reply'], event.target.value)}
+                    />
+                  </Field>
+                </Section>
+
+                <Section
+                  title="Keyword triggers"
+                  description="Phrases in the creator's own message. Use these for anything a person must see: a safety complaint, a legal threat, a press enquiry."
+                >
+                  <div className="admin-wide">
+                    <KeywordRows
+                      keywords={draft.escalation.keywords || []}
+                      onChange={(value) => update(['escalation', 'keywords'], value)}
+                    />
+                  </div>
+                </Section>
+
+                <Section
+                  title="Profile triggers"
+                  description="Conditions on the verified creator profile, using the same rule language as gift criteria. Evaluated every turn, so a flagged creator is escalated on the first message rather than the third."
+                >
+                  <div className="admin-wide">
+                    <CriteriaBuilder
+                      rules={draft.escalation.metrics || []}
+                      metrics={metricCatalog}
+                      onChange={(value) => update(['escalation', 'metrics'], value)}
+                      reasonPlaceholder="Reason (internal)"
+                      emptyText="No profile rules — nothing about a creator escalates on its own."
+                      addLabel="+ Add profile rule"
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Notes" description="Free text for whoever maintains this config.">
+                  <Field label="Escalation notes" wide>
+                    <textarea
+                      rows={2}
+                      value={draft.escalation.notes || ''}
+                      onChange={(event) => update(['escalation', 'notes'], event.target.value)}
+                    />
+                  </Field>
+                </Section>
+              </>
             )}
 
             {node === 'models' && (

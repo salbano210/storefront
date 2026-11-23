@@ -151,9 +151,17 @@ async def test_every_disposition_is_reported_even_at_zero(client, use_fake_llm):
     data = await analytics(client)
     dispositions = by_key(data["by_disposition"], "disposition")
 
-    assert set(dispositions) == {"gift_request_approved", "gift_request_denied", "other"}
+    assert set(dispositions) == {
+        "gift_request_approved",
+        "gift_request_denied",
+        "other",
+        "escalated",
+    }
     assert dispositions["gift_request_approved"]["count"] == 0
     assert dispositions["gift_request_approved"]["rate"] == 0.0
+    # Escalation is its own outcome, not a kind of "other".
+    assert dispositions["escalated"]["count"] == 0
+    assert dispositions["escalated"]["label"] == "Escalated to a human"
 
 
 async def test_the_other_bucket_is_broken_down_by_outcome(client, use_fake_llm):

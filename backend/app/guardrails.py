@@ -92,6 +92,18 @@ GIFT_CLAIM_PATTERNS: tuple[str, ...] = (
     r"\bapproved (your|the) gift\b",
 )
 
+# The model has no escalation tool, so any claim that it referred the creator to a
+# person is a fabrication -- and a costly one, because the creator then waits for
+# someone who was never told.
+ESCALATION_CLAIM_PATTERNS: tuple[str, ...] = (
+    r"\b(i'?ve|i have|we'?ve|we have)\s+(escalated|forwarded|passed|referred|flagged)\b",
+    r"\b(passed|forwarded|referred|handed)\s+(this|it|your\s+\w+)\s+(on\s+)?to\b",
+    r"\b(escalating|forwarding)\s+(this|it)\b",
+    r"\b(human|person|team member|colleague|manager|agent)\s+will\s+(pick|take|follow|be in touch|reach out)\b",
+    r"\bconnect you (with|to)\s+(a|someone|the)\b",
+    r"\bsomeone from (our|the) team\b",
+)
+
 def detect_injection(text: str) -> list[str]:
     """Names of the instruction-override patterns present in the message."""
     found: list[str] = []
@@ -119,6 +131,10 @@ def _matches(text: str, patterns: Sequence[str]) -> str | None:
 
 def claims_gift_success(text: str) -> str | None:
     return _matches(text, GIFT_CLAIM_PATTERNS)
+
+
+def claims_escalation(text: str) -> str | None:
+    return _matches(text, ESCALATION_CLAIM_PATTERNS)
 
 
 # --- truthful replacements -------------------------------------------------
@@ -188,6 +204,14 @@ SAFE_REFUSAL = (
     "request or with questions about our products."
 )
 
+# What to say when the model claims it referred the creator to someone. It cannot:
+# escalation is decided by the brand's configured rules, and inventing a hand-off
+# leaves the creator waiting for a person who was never told.
+SAFE_ESCALATION_REPLY = (
+    "I'm not able to pass this to a colleague myself — I can only handle gifting requests. "
+    "Ask for a person and the team will pick it up from here."
+)
+
 
 @dataclass
 class ReplyVerdict:
@@ -228,6 +252,17 @@ def inspect_reply(
                 replacement=truthful_gift_reply(records, eligibility=eligibility),
                 details={"matched_pattern": matched, "agent": agent, "claimed_reply": text[:600]},
             )
+
+    # The model has no way to escalate, so this claim is always a fabrication.
+    matched = claims_escalation(text)
+    if matched:
+        return ReplyVerdict(
+            replaced=True,
+            guardrail="ungrounded_escalation_claim",
+            summary="Reply withheld: it claimed a hand-off that never happened",
+            replacement=SAFE_ESCALATION_REPLY,
+            details={"matched_pattern": matched, "agent": agent, "claimed_reply": text[:600]},
+        )
 
     return ReplyVerdict()
 

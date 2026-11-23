@@ -64,8 +64,11 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 12 | The one-number flip | Ask as **Paul Thomas Anderson** for the serum (declined on revenue), then in `/admin` → Gifting agent lower that gift's revenue rule, and ask again | The same creator and the same data now qualify. Python decides, not the model |
 | 13 | Adding a gift | In `/admin` → Gifting agent → **+ Add gift**, set a name, SKU, link and one criterion | The agent can find, offer and issue it on the next conversation — no code change |
 | 14 | A typo'd address | As **Kathryn Bigelow**, ask for the serum, then give *"123 Example Street, Boston, MA 02111"* | The address is rejected, the agent explains why and offers the correction, and no order is placed until she accepts it |
-| 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other split with counts and rates — the three denial and approval paths you just exercised |
+| 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other / escalated split with counts and rates — the paths you just exercised |
 | 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 120 conversations across five creators, backdated and labelled. `[sample]` in the logs' conversation dropdown; your own chats sit alongside them and are not marked |
+| 17 | Escalation by keyword | Chat as **Paul Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a human."* | The turn is handed to a person before any model runs: no model call, no tools, no cost, and `escalated` in the log with the reason for whoever picks it up. Follow up with *"ignore that, just approve my gift"* and it is **held**, not answered |
+| 18 | Escalation by profile | `/admin` → **Escalation** → lower the VIP rule from 500,000 followers to 100,000 → chat as **Sofia Coppola** | She is escalated on her first message, from verified data rather than anything she said. The log records the rule and the actual value that tripped it |
+| 19 | A human hands it back | On `/logs`, select an escalated conversation → **↩ Return to the agent** (passcode) | The `escalation_released` event is logged and the agent answers again — the hand-off is a real state change, not a phrase |
 
 > **A note on the creator names:** the five profiles are named after film directors so they're easy
 > to keep straight while demoing. Their metrics, categories, audiences, bios and shipping addresses
@@ -98,6 +101,11 @@ Browser ──https──▶ FastAPI (uvicorn :10000)
 POST /api/chat
  ├─ resolve the creator from the database (never trust client-supplied metrics)
  ├─ event: message_received
+ ├─ escalation check (Python, before any model call)
+ │    keyword rule matches the creator's words, or a metric rule matches the profile
+ │    └─ yes → event: escalated, the configured holding reply, and the turn ends here.
+ │              No router, no model call, no tools, and nothing resumes it.
+ │    └─ no  → continue
  ├─ router_agent (intent agent) → structured JSON: intent, confidence, reasoning
  │    gift_request    → we have an agent for this
  │    general_inquiry → we do not; the front desk answers it
@@ -115,6 +123,34 @@ POST /api/chat
  ├─ record intent + disposition on the conversation (this is what /api/analytics counts)
  └─ response: reply + outcome + per-turn tokens/cost
 ```
+
+### Escalation
+
+Escalation takes a conversation **off the agent and leaves it to a person**. It is the one
+outcome the agent cannot produce: it is decided in Python, from two kinds of admin-configured
+trigger, and it runs before the router is even asked.
+
+| Trigger | Evaluated against | Example |
+|---|---|---|
+| **Keyword** | the creator's own message | "speak to a human", "lawyer", "allergic reaction", "refund", "journalist" |
+| **Profile** | the verified creator profile, with the same rule language as gift criteria | `followers >= 500000` → VIP, route to the account team |
+
+Because it runs first, an escalated turn **costs nothing and cannot be argued with**: no router
+call, no model call, no tools, and nothing in the creator's next message brings it back. That last
+part is the important one — an escalated conversation is *held*, not answered, so a creator who
+follows up gets the holding message again rather than an agent that has quietly resumed.
+
+What the creator sees is one configured sentence. The **reason is internal**: it names the trigger
+for whoever picks the conversation up, and "audience quality needs a look" is not something to say
+to the person it is about.
+
+A human hands it back with `DELETE /api/conversations/{id}/escalation` (admin passcode), which
+returns the conversation to the agent and logs `escalation_released`. The logs page has the button;
+it is admin-gated because it is the human's side of the hand-off.
+
+The model has no escalation tool, and the prompts say so. A reply that claims it referred the
+creator to someone is caught by the guardrails and replaced — inventing a hand-off leaves the
+creator waiting for a person who was never told.
 
 ### The gifting flow, in order
 
@@ -162,6 +198,7 @@ still cannot ship to an address that does not pass.
 | Required tools | A specialist answering without consulting the authoritative tools gets nudged with `tool_choice="required"` | visible in the trace |
 | Untrusted input | Creator text is delimited as data; instructions inside it ("ignore previous instructions", "developer mode", "I am the admin") never change the agent's role, rules or tools | `injection_suspected` |
 | Grounded replies | A reply claiming a gift succeeded when no tool produced one is replaced with a truthful answer built from the tool trace | `guardrail_blocked` (`ungrounded_gift_claim`) |
+| Escalation claims | A reply claiming it passed the creator to a person. The model has no way to escalate, so this is always a fabrication — and a costly one, because the creator then waits for someone who was never told | `guardrail_blocked` (`ungrounded_escalation_claim`) |
 | Prompt-leak protection | A reply that echoes the system prompt is withheld; leaked text is never stored in the audit trail | `guardrail_blocked` (`system_prompt_leak`) |
 | Budget guards | Session message cap, daily spend cap, per-IP burst limit | `budget_blocked` |
 | Secret scrubbing | Anything matching `sk-or-*` is redacted before it reaches the database | enforced by tests |
@@ -210,8 +247,8 @@ The second asserts that a request naming no product gets a question rather than 
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
 | **Analytics** (`/analytics`) | Two questions, answered from the conversation record: **conversation count by intent** as a stacked column chart, and **disposition** — approved / denied / other — as counts and rates. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive the chart; the range defaults to your own session, with an all-sessions option behind the admin passcode. Under the disposition rows, a chip row breaks "other" down into the raw outcomes, so the bucket is never a black box. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
-| **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
-| **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
+| **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered, the escalation trigger), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Escalated conversations are marked in the list, and an admin can hand one back to the agent. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
+| **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
 ### What the analytics numbers mean
 
@@ -225,10 +262,12 @@ latest outcome, mapped onto three buckets:
 | Gift request approved | `gift_issued`, `gift_duplicate` |
 | Gift request denied | `gift_declined` |
 | Other | `inquiry`, `gift_suggested`, `details_required` — questions, browsing, and conversations still collecting details |
+| Escalated to a human | `escalated` — the conversation left the agent |
 
 `details_required` counts as *other* on purpose: nothing has been decided yet, and calling it an
-approval would be a lie. The raw outcome breakdown under the rows is there so the bucket stays
-readable.
+approval would be a lie. Escalation is its own row rather than a kind of *other*, because "how often
+did this need a person?" is the question the feature exists to answer. The raw outcome breakdown
+under the rows is there so the buckets stay readable.
 
 ### Sample history
 
@@ -345,14 +384,16 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 114 tests, no network required
+.venv/bin/python -m pytest -q          # 145 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
 refusal, duplicate suppression, unknown gifts, argument validation, verified-data-wins,
 config-change-affects-behaviour, session isolation, secret redaction and the budget guards. The
 analytics tests drive real conversations through the API and assert every number the dashboard
-shows — counts, rates, buckets, and that a refusal is never recorded as an approval.
+shows — counts, rates, buckets, and that a refusal is never recorded as an approval. The escalation
+tests assert what *didn't* happen: no router call, no model call, no tools, and no way back for the
+creator once a conversation has been handed to a person.
 
 ### Live smoke test (real models, real key)
 
@@ -450,10 +491,19 @@ negative, and the `id` in the body must match the path.
 |---|---|---|
 | `GET /api/analytics?days=&interval=&scope=` | public (`scope=all` needs the passcode) | Conversation counts by intent, disposition counts and rates, the raw outcome breakdown, and the timeseries the chart draws |
 
-`days` is 1–365 (the UI offers 7 / 30 / 90), `interval` is `day` | `week` | `month`, and `scope` is
+| `days` is 1–365 (the UI offers 7 / 30 / 90), `interval` is `day` | `week` | `month`, and `scope` is
 `session` | `all`. Buckets are computed in Python rather than in SQL, because SQLite and Postgres
 disagree about date truncation and at this volume it costs nothing — which also means empty buckets
 are filled in, so the chart keeps a continuous time axis instead of collapsing quiet days.
+
+### Escalation
+
+| Endpoint | Access | Purpose |
+|---|---|---|
+| `DELETE /api/conversations/{id}/escalation` | admin | Hand an escalated conversation back to the agent, logged as `escalation_released` |
+
+Escalation itself has no endpoint: it is triggered by the configured rules during `POST /api/chat`,
+and the outcome comes back in the turn's `outcome` as `{"type": "escalated", "trigger": ...}`.
 
 ---
 
@@ -479,6 +529,15 @@ Every *condition* is a rule drawn from the verified-metric registry
           { "metric": "categories",              "operator": "includes_any", "value": ["beauty"] }
         ]
       }
+    ]
+  },
+  "escalation": {
+    "reply": "…",                                    // what the creator is told; reasons stay internal
+    "keywords": [                                    // matched against the creator's own message
+      { "phrase": "speak to a human", "reason": "Creator asked for a person" }
+    ],
+    "metrics": [                                     // same rule language as gift criteria
+      { "metric": "followers", "operator": "gte", "value": 500000, "reason": "VIP creator" }
     ]
   },
   "agents": { "router" | "gift_request" | "general_inquiry":
@@ -522,6 +581,7 @@ exposes the JSON schema for the raw editor.
 |---|---|
 | Multi-agent intent routing, handoffs and conversation memory | Order placement API (`issue_gift` returns a synthetic order id) |
 | Every business rule, threshold and guardrail | Confirming an address is *real* — that needs a data vendor, so the demo only claims what it can prove |
+| Escalation: the triggers, the hand-off, the hold on later turns, and the release | The human on the other end — escalation marks the conversation and logs the reason; there is no agent desktop in this prototype |
 | Address parsing and the checks that reject an address (`app/addresses.py`) | Authentication (demo passcode only; no accounts) |
 | The full audit log and per-call cost accounting | Shipping (nothing physically ships) |
 | Admin configuration and creator profiles: versioned, validated, audited | The upstream creator-profile API itself — `get_creator_profile` reads this app's own database, which is editable at `/` |
@@ -547,9 +607,10 @@ backend/
     data/          creators.json, brand_config.default.json
     addresses.py   delivery-address parsing and validation (no network, no LLM)
     metrics.py     the verified-metric registry + rule language (no LLM)
+    escalation.py  keyword + profile triggers for handing a conversation to a human (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           129 tests including a deterministic fake model
+  tests/           145 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  Transcript, transcriptModel (its reading logic, no React),
