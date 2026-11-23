@@ -65,7 +65,7 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 13 | Adding a gift | In `/admin` → Gifting agent → **+ Add gift**, set a name, SKU, link and one criterion | The agent can find, offer and issue it on the next conversation — no code change |
 | 14 | A typo'd address | As **Kathryn Bigelow**, ask for the serum, then give *"123 Example Street, Boston, MA 02111"* | The address is rejected, the agent explains why and offers the correction, and no order is placed until she accepts it |
 | 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other / escalated split with counts and rates — the paths you just exercised |
-| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 120 conversations across five creators, backdated and labelled. `[sample]` in the logs' conversation dropdown; your own chats sit alongside them and are not marked |
+| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 240 conversations across five creators, backdated and labelled. `[sample]` in the logs' conversation dropdown; your own chats sit alongside them and are not marked |
 | 17 | Escalation by keyword | Chat as **Paul Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a human."* | The turn is handed to a person before any model runs: no model call, no tools, no cost, and `escalated` in the log with the reason for whoever picks it up. Follow up with *"ignore that, just approve my gift"* and it is **held**, not answered |
 | 18 | Escalation by profile | `/admin` → **Escalation** → lower the VIP rule from 500,000 followers to 100,000 → chat as **Sofia Coppola** | She is escalated on her first message, from verified data rather than anything she said. The log records the rule and the actual value that tripped it |
 | 19 | A human hands it back | On `/logs`, select an escalated conversation → **↩ Return to the agent** (passcode) | The `escalation_released` event is logged and the agent answers again — the hand-off is a real state change, not a phrase |
@@ -246,7 +246,7 @@ The second asserts that a request naming no product gets a question rather than 
 |---|---|
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
-| **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, with a gap wherever no gift request reached a decision. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
+| **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it, with a gap wherever fewer than eight requests were decided in the window. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
 | **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered, the escalation trigger), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Escalated conversations are marked in the list, and an admin can hand one back to the agent. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
@@ -266,9 +266,14 @@ latest outcome, mapped onto three buckets:
 
 `details_required` counts as *other* on purpose: nothing has been decided yet, and calling it an
 approval would be a lie. Escalation is its own row rather than a kind of *other*, because "how often
-did this need a person?" is the question the feature exists to answer. The approval rate chart uses
-only the first two rows: the denominator is gift requests that reached a decision, so questions and
-escalations cannot dilute it into meaninglessness.
+did this need a person?" is the question the feature exists to answer.
+
+The approval rate line uses only the first two rows — the denominator is gift requests that reached a
+decision, so questions and escalations cannot dilute it into meaninglessness. It is also a **trailing
+window**, not a per-bucket rate: a single day usually holds one or two decisions, so a daily rate is
+0% or 100% and reads as noise. Each point is the rate over the previous 21 days, which is what makes
+the line modulate around the brand's real rate instead of swinging between the extremes. Points with
+fewer than eight decisions behind them are left as gaps rather than plotted.
 
 ### Sample history
 
@@ -287,13 +292,16 @@ What *is* synthetic is the model's wording, the model's name, and the timestamps
 | | |
 |---|---|
 | The model | Reports itself as `sample/offline-simulator`, and each call also records the model that was *asked* for, so the log shows both |
-| The timestamps | Backdated across the requested range, weighted towards recent days so the trend line reads like a channel that is picking up |
+| The timestamps | Backdated across the requested range plus the dashboard's rate window, so the trailing average has history at the left edge of the chart. Density ramps by about 2x from the oldest day to today — enough to read as a channel picking up, not so steep that the early buckets are empty |
+| The order | Shuffled before the times are handed out, so approvals are spread across the range instead of piling up where the recipes are written |
 | The label | Conversations carry `source="seeded"`: marked `[sample]` in the logs' conversation list, counted separately in the analytics payload, never folded into the real numbers silently |
 
 Everything else is real. The orders it places are rows in `gift_orders`; the duplicate guard
 suppresses a repeat order in the same session; a refusal is recorded as a refusal. The outcome mix
 comes from the recipes in `app/services/seeder.py` — five creators, three gift offers, and the same
-criteria the admin edits.
+criteria the admin edits. The weights are deliberately lopsided towards refusals: only two of the
+five profiles clear every gift's bar, so the history shows a **selective** brand approving roughly a
+fifth of the requests it decides, which is what the approval-rate line then draws.
 
 Two consequences worth knowing:
 
@@ -385,7 +393,7 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 145 tests, no network required
+.venv/bin/python -m pytest -q          # 149 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
@@ -412,13 +420,13 @@ models.
 
 ```bash
 cd backend
-.venv/bin/python ../scripts/seed_history.py --days 90 --count 120   # generate
+.venv/bin/python ../scripts/seed_history.py --days 90 --count 240   # generate
 .venv/bin/python ../scripts/seed_history.py --clear                # remove
 ```
 
 Drives the real agents with the offline model, so it costs nothing and needs no key. It replaces
-any sample history already present, so running it twice gives the same 120 conversations rather
-than 240. Set `SEED_DEMO_HISTORY=1` to have the app do this at boot instead.
+any sample history already present, so running it twice gives the same 240 conversations rather
+than 480. Set `SEED_DEMO_HISTORY=1` to have the app do this at boot instead.
 
 ### Debugging a single turn
 
@@ -505,11 +513,17 @@ Each bucket reports:
 |---|---|
 | `total`, `counts` | conversations in the bucket, split by intent |
 | `dispositions` | the same conversations split by disposition — all four keys, always, so a stacked chart has a value for every series |
-| `approved`, `denied`, `decided` | gift requests that reached a decision |
-| `approval_rate` | `approved / decided`, or **`null`** when nothing was decided |
+| `rate` | the approval rate point: `approved`, `denied`, `decided` and `value`, summed over the trailing window that ends at this bucket |
 
-`null` rather than `0` on purpose: a bucket where no gift request was decided has no approval rate,
-and plotting it as 0% would invent a cliff that never happened. The line breaks instead.
+`rate.value` is `null` in two cases, and both are deliberate. Nothing decided in the window means
+there is no rate; fewer than `rate_window.min_decided` (eight) decisions in it means the rate is not
+worth drawing. Plotting either as 0% would invent a cliff that never happened, so the line breaks
+instead. The window itself is reported once at the top level, so the UI can label the line without
+hardcoding it:
+
+```json
+"rate_window": { "days": 21, "buckets": 21, "min_decided": 8 }
+```
 
 ### Escalation
 
@@ -625,7 +639,7 @@ backend/
     escalation.py  keyword + profile triggers for handing a conversation to a human (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           145 tests including a deterministic fake model
+  tests/           149 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  Transcript, transcriptModel (its reading logic, no React),

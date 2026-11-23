@@ -66,7 +66,9 @@ SESSION_TTL_DAYS = _env_int("SESSION_TTL_DAYS", 30)
 # data and labelled in the UI.
 SEED_DEMO_HISTORY = _env("SEED_DEMO_HISTORY").lower() in {"1", "true", "yes", "on"}
 SEED_DEMO_DAYS = _env_int("SEED_DEMO_DAYS", 90)
-SEED_DEMO_COUNT = _env_int("SEED_DEMO_COUNT", 120)
+# Enough conversations that a fortnight's worth of decisions backs each point on the
+# approval-rate line. At ~67ms each this is about 16 seconds of boot.
+SEED_DEMO_COUNT = _env_int("SEED_DEMO_COUNT", 240)
 
 # --- Budget + abuse guards ------------------------------------------------
 MAX_DAILY_SPEND_USD = _env_float("MAX_DAILY_SPEND_USD", 2.0)

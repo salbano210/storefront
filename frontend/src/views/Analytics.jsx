@@ -25,9 +25,9 @@ const INTERVALS = [
   { id: 'month', label: 'Month' },
 ]
 
-// How much history the button generates. Sized to fill a 90-day chart without
-// taking more than a couple of seconds.
-const SAMPLE = { days: 90, count: 120 }
+// How much history the button generates. Sized so a fortnight's decisions back each
+// point on the approval-rate line; about 16 seconds of work.
+const SAMPLE = { days: 90, count: 240 }
 
 function Legend({ rows, toneKey }) {
   return (
@@ -97,8 +97,14 @@ export default function Analytics() {
   const hasSample = sampleCount > 0
   const approvalRate = data?.totals.approval_rate
   const decided = data?.totals.decided ?? 0
+  const window = data?.rate_window
+  const latestRate = data
+    ? [...data.series].reverse().find((row) => row.rate?.value !== null && row.rate?.value !== undefined)
+    : null
   const rateLabel =
     approvalRate === null || approvalRate === undefined ? '—' : formatters.pct(approvalRate)
+  const latestRateLabel =
+    latestRate === null || latestRate === undefined ? '—' : formatters.pct(latestRate.rate.value)
 
   return (
     <div className="page">
@@ -124,7 +130,7 @@ export default function Analytics() {
             </div>
             <div className="stat">
               <span className="stat-value">{rateLabel}</span>
-              <span className="stat-label">approval rate · {decided} decided</span>
+              <span className="stat-label">approval rate in range · {decided} decided</span>
             </div>
             <div className="stat">
               <span className="stat-value">{stats.escalated}</span>
@@ -253,14 +259,17 @@ export default function Analytics() {
             <header>
               <h2>Gift request approval rate</h2>
               <span className="muted small">
-                Approved share of gift requests that reached a decision
-                {decided ? ` · ${rateLabel} overall, from ${decided}` : ' · nothing decided yet'}
+                {window
+                  ? `${window.days}-day rolling · ${latestRateLabel} at the latest point`
+                  : 'approved share of gift requests that reached a decision'}
               </span>
             </header>
             <RateLine build={(width) => approvalChart(data, { width })} />
             <p className="muted small chart-note">
-              A gap means no gift request was decided in that bucket, so there is no rate to plot.
-              Questions and escalations are not counted as denials.
+              Each point is the share of the previous {window?.days ?? 21} days&apos; decided gift
+              requests that were approved, so the line reads as a trend rather than a daily coin
+              flip. A gap means fewer than {window?.min_decided ?? 8} requests were decided in the
+              window. Questions and escalations are not counted as denials.
             </p>
           </section>
         </>

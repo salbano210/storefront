@@ -189,16 +189,46 @@ def test_the_plan_preserves_recipe_order_so_a_reorder_follows_its_order():
     assert keys.index(("reorder", "gift_issued")) < keys.index(("reorder", "gift_duplicate"))
 
 
-def test_start_times_stay_inside_the_range_and_favour_recent_days():
+def test_the_shuffled_plan_spreads_outcomes_without_splitting_a_thread():
+    """Times are handed out in execution order, so running the recipes as written
+    would pile every approval at the start of the range and every refusal at the end.
+    The shuffle breaks that up, but a thread still has to run in order."""
+    plan = seeder._ordered(seeder._plan(FULL), random.Random(7))
+    assert len(plan) == len(seeder._plan(FULL))
+
+    approvals = [
+        index for index, recipe in enumerate(plan) if recipe.outcome in {"gift_issued", "gift_duplicate"}
+    ]
+    third = len(plan) // 3
+    # Every third of the plan gets a share of the approvals, and no single third
+    # swallows most of them -- which is what running the recipes as written did.
+    shares = [
+        len([index for index in approvals if start <= index < start + third])
+        for start in range(0, len(plan), third)
+    ]
+    assert all(share > 0 for share in shares), shares
+    assert max(shares) < len(approvals) / 2, shares
+
+    keys = [(recipe.thread, recipe.outcome) for recipe in plan]
+    assert keys.index(("reorder", "gift_issued")) < keys.index(("reorder", "gift_duplicate"))
+
+
+def test_start_times_cover_the_range_plus_the_rate_window_and_favour_recent_days():
+    """The history starts before the range so the dashboard's trailing window has
+    something to average over at the left edge of the chart."""
     starts = seeder._start_times(random.Random(7), count=200, days=30)
     today = datetime.now(timezone.utc).date()
 
     assert starts == sorted(starts)
     assert max(starts).date() <= today
-    assert min(starts).date() >= today - timedelta(days=29)
-    # Weighted towards today: the recent half should be busier than the older half.
-    recent = len([start for start in starts if (today - start.date()).days < 15])
-    assert recent > 100
+    assert min(starts).date() >= today - timedelta(days=29 + seeder.SPAN_LOOKBACK_DAYS)
+    # Weighted towards today, but only mildly: the newest fortnight should be busier
+    # than the oldest without starving it.
+    span = 29 + seeder.SPAN_LOOKBACK_DAYS
+    recent = len([start for start in starts if (today - start.date()).days < 14])
+    oldest = len([start for start in starts if (today - start.date()).days >= span - 14])
+    assert recent > oldest
+    assert oldest > 20
 
 
 # ---------------------------------------------------------------------------

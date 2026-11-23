@@ -291,26 +291,35 @@ export function dispositionChart(data, { width }) {
 /**
  * The gift request approval rate over time, as a line.
  *
+ * Each point is the rate over a trailing window (14 days, from the payload's
+ * `rate_window`), not the bucket's own rate: a single day usually holds one or two
+ * decisions, so a per-day rate is 0% or 100% and reads as noise rather than a trend.
+ * The window makes the line modulate around the brand's real rate.
+ *
  * The y-axis is pinned to 0-100%: an axis that rescales to its own maximum turns a
- * two-point wobble into a cliff. Buckets where nothing was decided are gaps rather
- * than zeros -- the payload sends null for those, and the line breaks instead of
- * dropping to the floor and claiming a 0% approval rate that never happened.
+ * two-point wobble into a cliff. Points below the minimum sample are gaps -- the
+ * payload sends null for those, and the line breaks rather than dropping to the
+ * floor and claiming a rate that was never measured.
  */
 export function approvalChart(data, { width }) {
   const f = frame({ width, buckets: (data.series || []).length, max: 1, integer: false })
   const stride = labelStride(f.band)
 
-  const points = (data.series || []).map((row, index) => ({
-    key: row.bucket,
-    index,
-    x: f.centerX(index),
-    value: row.approval_rate,
-    decided: row.decided,
-    label: row.label,
-    y: row.approval_rate === null || row.approval_rate === undefined
-      ? null
-      : f.y(row.approval_rate),
-  }))
+    const points = (data.series || []).map((row, index) => {
+      const rate = row.rate || {}
+      return {
+        key: row.bucket,
+        index,
+        x: f.centerX(index),
+        value: rate.value ?? null,
+        decided: rate.decided ?? 0,
+        label: row.label,
+        y:
+          rate.value === null || rate.value === undefined
+            ? null
+            : f.y(rate.value),
+      }
+    })
 
   // A gap breaks the line: points are only joined when both ends exist.
   const runs = []

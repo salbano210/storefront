@@ -40,6 +40,11 @@ SAMPLE_SESSION_PREFIX = "sess_sample"
 # logs by the model that produced it as well as by the conversation it belongs to.
 SIMULATED_MODEL_NAME = "sample/offline-simulator"
 
+# The dashboard's approval rate is a trailing window (see ``api/analytics.py``), so
+# the history has to start *before* the range it is charted over. Otherwise the first
+# points of the line are averaged over a stub of a window, which reads as a spike.
+SPAN_LOOKBACK_DAYS = 21
+
 # Every creator profile carries an address, and the agent offers it before asking
 # for a new one, so this is what "settle the delivery address" looks like.
 CONFIRM_ADDRESS = "Yes, that address is right."
@@ -71,14 +76,22 @@ class Recipe:
 RECIPES: tuple[Recipe, ...] = (
     # Approved: the creator qualifies, confirms the address on file, and the
     # orchestrator places the order. Each of these is its own session.
-    Recipe("gift_issued", "creator_001", ("Hi! I'd love to try the Barrier Repair Serum.", CONFIRM_ADDRESS), weight=5),
-    Recipe("gift_issued", "creator_005", ("Hey -- could I get the Barrier Repair Serum?", CONFIRM_ADDRESS), weight=4),
-    Recipe("gift_issued", "creator_002", ("Can I try the Hydrating Cleanser?", CONFIRM_ADDRESS), weight=3),
-    Recipe("gift_issued", "creator_003", ("Could I get the Discovery Set?", CONFIRM_ADDRESS), weight=2),
-    # Declined: below the bar, so the sweep names what they do qualify for.
-    Recipe("gift_declined", "creator_002", ("Could I try the Barrier Repair Serum?",), weight=3),
-    Recipe("gift_declined", "creator_003", ("I'd love the Barrier Repair Serum.",), weight=3),
-    Recipe("gift_declined", "creator_004", ("Could I get the Barrier Repair Serum?",), weight=2),
+    #
+    # Deliberately rare. Only two of the five profiles clear every gift's bar, so
+    # most requests are refused and the approval rate lands near a fifth rather than
+    # looking like a rubber stamp.
+    Recipe("gift_issued", "creator_001", ("Hi! I'd love to try the Barrier Repair Serum.", CONFIRM_ADDRESS), weight=3),
+    Recipe("gift_issued", "creator_005", ("Hey -- could I get the Barrier Repair Serum?", CONFIRM_ADDRESS), weight=3),
+    Recipe("gift_issued", "creator_002", ("Can I try the Hydrating Cleanser?", CONFIRM_ADDRESS), weight=1),
+    Recipe("gift_issued", "creator_003", ("Could I get the Discovery Set?", CONFIRM_ADDRESS), weight=1),
+    # Declined: below the bar, so the sweep names what they do qualify for. Six
+    # phrasings across the three creators who do not clear every gift.
+    Recipe("gift_declined", "creator_002", ("Could I try the Barrier Repair Serum?",), weight=8),
+    Recipe("gift_declined", "creator_002", ("I'd love the Discovery Set for my channel.",), weight=5),
+    Recipe("gift_declined", "creator_003", ("I'd love the Barrier Repair Serum.",), weight=8),
+    Recipe("gift_declined", "creator_003", ("Can I get the Hydrating Cleanser?",), weight=5),
+    Recipe("gift_declined", "creator_004", ("Could I get the Barrier Repair Serum?",), weight=8),
+    Recipe("gift_declined", "creator_004", ("Can I try the Discovery Set?",), weight=6),
     # Eligible, but the delivery address was never settled, so nothing was ordered.
     Recipe("details_required", "creator_001", ("Hi, I'd love to try the Barrier Repair Serum.",), weight=3),
     Recipe("details_required", "creator_005", ("Can I get the Barrier Repair Serum?",), weight=2),
@@ -108,15 +121,45 @@ def _plan(count: int) -> list[Recipe]:
     return [recipe for recipe, times in zip(RECIPES, base) for _ in range(times)]
 
 
-def _start_times(rng: random.Random, count: int, days: int) -> list[datetime]:
-    """A backdated start time per conversation, busier towards today.
+def _ordered(plan: list[Recipe], rng: random.Random) -> list[Recipe]:
+    """Shuffle the plan, keeping each thread's conversations together and in order.
 
-    A flat distribution would draw a flat chart. Weighting the recent days makes
-    the trend line read like a channel that is picking up.
+    Times are handed out in execution order, so running the recipes in the order they
+    are written piles every approval at the start of the range and every refusal at
+    the end -- which is a cliff, not a trend. Shuffling fixes that. A thread is kept
+    intact because the duplicate guard needs its order to come before its repeats.
+    """
+    groups: list[list[Recipe]] = []
+    by_thread: dict[str, list[Recipe]] = {}
+    for recipe in plan:
+        if recipe.thread:
+            group = by_thread.get(recipe.thread)
+            if group is None:
+                group = []
+                by_thread[recipe.thread] = group
+                groups.append(group)
+            group.append(recipe)
+        else:
+            groups.append([recipe])
+    rng.shuffle(groups)
+    return [recipe for group in groups for recipe in group]
+
+
+def _start_times(rng: random.Random, count: int, days: int) -> list[datetime]:
+    """A backdated start time per conversation, mildly busier towards today.
+
+    The span runs ``SPAN_LOOKBACK_DAYS`` past the requested range so the dashboard's
+    trailing window has real history to average over at the left edge of the chart.
+
+    A flat distribution draws a flat chart; a steep one starves the early buckets and
+    the rate line has nothing to average over. This ramps by about 2x from the start
+    of the range to today, which reads as a channel picking up without hollowing out
+    the first half of the chart.
     """
     midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    offsets = list(range(days))
-    weights = [days - offset for offset in offsets]  # today is `days`x as likely
+    span = days + SPAN_LOOKBACK_DAYS
+    offsets = list(range(span))
+    weights = [span + (span - offset) for offset in offsets]  # ~1x at the start, 2x today
     picks = rng.choices(offsets, weights=weights, k=count)
     starts = []
     for offset in picks:
@@ -212,7 +255,7 @@ async def seed_history(
     cleared = await clear_sample_history(db)
     config_version, config = await config_manager.get_current(db)
 
-    plan = _plan(count)
+    plan = _ordered(_plan(count), rng)
     starts = _start_times(rng, len(plan), days)
 
     created: list[tuple[str, datetime, int]] = []

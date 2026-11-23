@@ -35,5 +35,8 @@ services:
         value: "1"
       - key: SEED_DEMO_DAYS
         value: "90"
+      # 240 conversations is about 16 seconds of boot, and is what gives the
+      # approval-rate line enough decisions per fortnight to be a trend rather than
+      # a coin flip.
       - key: SEED_DEMO_COUNT
-        value: "120"
+        value: "240"

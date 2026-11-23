@@ -40,7 +40,7 @@ git push -u origin main
 | `MAX_DAILY_SPEND_USD` | Set | `2.0`. Hard ceiling on host-key spend per UTC day. |
 | `SESSION_MESSAGE_CAP` | Set | `40` messages per browser session. |
 | `SEED_DEMO_HISTORY` | Set | `1`. Generates a backdated sample history at boot when the database has none, so `/logs` and `/analytics` are populated on a fresh instance. Costs nothing (it uses the offline model) and takes a few seconds. |
-| `SEED_DEMO_DAYS` / `SEED_DEMO_COUNT` | Set | `90` / `120`. How far back to spread it, and how many conversations. |
+| `SEED_DEMO_DAYS` / `SEED_DEMO_COUNT` | Set | `90` / `240`. How far back to spread it, and how many conversations. The count is what gives the approval-rate line enough decisions per window to be a trend; about 16 seconds of boot. |
 | `DATA_DIR` | Set | `/app/data`. |
 
 4. **Apply** and wait for the first build (2–4 minutes: it builds the frontend, then the Python
@@ -117,7 +117,7 @@ and the API always ship together, so a mismatch there means the deploy is still 
 Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable presenter flow:
 
 0. Open `/analytics` first. The live demo seeds a 90-day sample history at boot, so the dashboard
-   and the logs are already populated — 120 conversations across five creators, backdated, and
+   and the logs are already populated — 240 conversations across five creators, backdated, and
    labelled `[sample]` wherever they appear. That is the "what the system has been doing" picture;
    everything below is you driving it live.
 

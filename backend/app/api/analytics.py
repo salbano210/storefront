@@ -28,6 +28,17 @@ router = APIRouter(prefix="/api", tags=["analytics"])
 
 INTERVALS = ("day", "week", "month")
 
+# The approval rate is plotted as a trailing window rather than per bucket. A daily
+# rate over one or two decisions is 0% or 100%, which reads as noise; three weeks of
+# them reads as a trend. The window is expressed in days so the meaning is the same
+# at every interval, and rounded to whole buckets.
+RATE_WINDOW_DAYS = 21
+# Below this many decisions a rate is not plotted at all -- the point would be a
+# single approval dressed up as a percentage. Eight is where a rate stops swinging
+# by more than a few points per decision.
+RATE_MIN_DECIDED = 8
+BUCKET_DAYS = {"day": 1, "week": 7, "month": 30}
+
 # The intent vocabulary, with the names the dashboard shows.
 INTENT_LABELS = {
     "gift_request": "Gift request",
@@ -138,13 +149,38 @@ async def analytics(
         per_bucket_intents[bucket][row.intent or "unknown"] += 1
         per_bucket_dispositions[bucket][row.disposition or "other"] += 1
 
+    # The trailing window reaches back before the range, so the first points of the
+    # line are not computed from a stub of a window.
+    window_buckets = max(1, round(RATE_WINDOW_DAYS / BUCKET_DAYS[interval]))
+    all_buckets = _bucket_starts(start - timedelta(days=RATE_WINDOW_DAYS * 2), today, interval)
+    window_counts: dict[str, Counter] = defaultdict(Counter)
+    for row in rows:
+        moment = _as_utc(row.created_at)
+        if moment.date() < start - timedelta(days=RATE_WINDOW_DAYS * 2):
+            continue
+        window_counts[_bucket_key(moment, interval)][row.disposition or "other"] += 1
+
+    def rate_window(bucket: str) -> dict:
+        """Decisions in the trailing window, and the rate they imply."""
+        index = all_buckets.index(bucket)
+        span = all_buckets[max(0, index - window_buckets + 1) : index + 1]
+        approved = sum(window_counts[item]["gift_request_approved"] for item in span)
+        denied = sum(window_counts[item]["gift_request_denied"] for item in span)
+        decided = approved + denied
+        return {
+            "window_buckets": len(span),
+            "approved": approved,
+            "denied": denied,
+            "decided": decided,
+            "value": round(approved / decided, 4)
+            if decided >= RATE_MIN_DECIDED
+            else None,
+        }
+
     series = []
     for bucket in _bucket_starts(start, today, interval):
         bucket_intents = per_bucket_intents[bucket]
         bucket_dispositions = per_bucket_dispositions[bucket]
-        approved = bucket_dispositions.get("gift_request_approved", 0)
-        denied = bucket_dispositions.get("gift_request_denied", 0)
-        decided = approved + denied
         series.append(
             {
                 "bucket": bucket,
@@ -153,17 +189,12 @@ async def analytics(
                 "counts": {
                     intent: bucket_intents.get(intent, 0) for intent in intent_order
                 },
+                # The stacked chart's segments: this bucket only.
                 "dispositions": {
                     item: bucket_dispositions.get(item, 0) for item in DISPOSITIONS
                 },
-                "approved": approved,
-                "denied": denied,
-                # The denominator for the approval rate: gift requests that reached
-                # a decision. Including questions would dilute it into meaninglessness.
-                "decided": decided,
-                # None rather than 0 where nothing was decided, so the line has a gap
-                # instead of claiming a 0% approval rate that never happened.
-                "approval_rate": round(approved / decided, 4) if decided else None,
+                # The line's point: the trailing window ending here.
+                "rate": rate_window(bucket),
             }
         )
 
@@ -178,6 +209,11 @@ async def analytics(
             "to": today.isoformat(),
             "days": days,
             "interval": interval,
+        },
+        "rate_window": {
+            "days": RATE_WINDOW_DAYS,
+            "buckets": window_buckets,
+            "min_decided": RATE_MIN_DECIDED,
         },
         "totals": {
             "conversations": total,
