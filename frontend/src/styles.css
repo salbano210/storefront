@@ -1402,135 +1402,93 @@ textarea {
   gap: 6px;
 }
 
-/* A stacked column chart. Segments are sized against the tallest bucket, so
- * every column is drawn on the same scale. */
-.chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 170px;
-  margin-bottom: 30px;
-  border-bottom: 1px solid var(--line);
-}
-
-.chart-col {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 2px;
-  height: 100%;
-}
-
-.chart-stack {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  height: 100%;
-}
-
-.chart-seg {
-  display: block;
+/* --- charts -------------------------------------------------------------- */
+.chart-frame {
   width: 100%;
+  min-height: 280px;
 }
 
-.chart-label {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding-top: 5px;
-  font-size: 10.5px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.seg-coral,
-.fill-coral {
-  background: var(--coral);
-}
-.seg-sage,
-.fill-sage {
-  background: var(--sage);
-}
-.seg-slate,
-.fill-slate {
-  background: var(--slate);
-}
-.seg-red,
-.fill-red {
-  background: var(--red);
-}
-.seg-muted,
-.fill-muted {
-  background: var(--line-strong);
-}
-
-.dot-coral {
-  background: var(--coral);
-}
-.dot-sage {
-  background: var(--sage);
-}
-.dot-slate {
-  background: var(--slate);
-}
-.dot-red {
-  background: var(--red);
-}
-.dot-muted {
-  background: var(--line-strong);
-}
-
-.disposition-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.disposition-row {
-  display: grid;
-  grid-template-columns: 10px minmax(150px, 210px) minmax(0, 1fr) 46px 58px;
-  gap: 12px;
-  align-items: center;
-  font-size: 13px;
-}
-
-.disposition-name {
-  color: var(--ink-soft);
-}
-
-.disposition-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--cream-deep);
-  overflow: hidden;
-}
-
-.disposition-fill {
+.chart-svg {
   display: block;
-  height: 100%;
-  min-width: 2px;
+  overflow: visible;
 }
 
-.disposition-count,
-.disposition-rate {
-  text-align: right;
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
 }
 
-.disposition-rate {
-  color: var(--muted);
+.chart-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
 }
 
-.outcome-note {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--line);
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
-.outcome-note .chips {
-  margin: 8px 0 0;
+.chart-value {
+  fill: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--white);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+.chart-value-in {
+  fill: var(--white);
+  stroke: none;
+}
+
+.chart-bar {
+  transition: opacity 0.12s ease;
+}
+
+.chart-bar:hover {
+  opacity: 0.82;
+}
+
+.bar-sage {
+  fill: var(--sage);
+}
+.bar-red {
+  fill: var(--red);
+}
+.bar-slate {
+  fill: var(--slate);
+}
+.bar-amber {
+  fill: var(--amber);
+}
+.bar-coral {
+  fill: var(--coral);
+}
+.bar-muted {
+  fill: var(--line-strong);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--coral);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-point {
+  fill: var(--white);
+  stroke: var(--coral);
+  stroke-width: 2;
+}
+
+.chart-note {
+  margin: 4px 0 0;
 }
 
 /* --- json ---------------------------------------------------------------- */
@@ -2264,14 +2222,6 @@ textarea {
 
   .timeline-summary {
     white-space: normal;
-  }
-
-  .disposition-row {
-    grid-template-columns: 10px minmax(0, 1fr) 40px 52px;
-  }
-
-  .disposition-bar {
-    display: none;
   }
 }
 

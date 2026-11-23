@@ -49,6 +49,25 @@ async def _database():
     yield
 
 
+@pytest.fixture(autouse=True)
+async def _clean_conversations(_database):
+    """Every test starts with no conversations.
+
+    The logs and the dashboard cover every session now, so one test's
+    conversations would otherwise show up in the next test's counts. Config and
+    creator profiles are left alone -- they are the fixture, not the subject.
+    """
+    from sqlalchemy import delete
+
+    from app.models import Conversation, Event, GiftOrder, Message
+
+    async with AsyncSessionLocal() as db:
+        for model in (Message, Event, GiftOrder, Conversation):
+            await db.execute(delete(model))
+        await db.commit()
+    yield
+
+
 @pytest.fixture
 def use_fake_llm(monkeypatch):
     """Install a FakeLLM as the model client for the duration of a test."""

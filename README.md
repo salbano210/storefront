@@ -246,7 +246,7 @@ The second asserts that a request naming no product gets a question rather than 
 |---|---|
 | **Creators** (`/`) | Pick which creator to simulate. Five profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
-| **Analytics** (`/analytics`) | Two questions, answered from the conversation record: **conversation count by intent** as a stacked column chart, and **disposition** — approved / denied / other — as counts and rates. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive the chart; the range defaults to your own session, with an all-sessions option behind the admin passcode. Under the disposition rows, a chip row breaks "other" down into the raw outcomes, so the bucket is never a black box. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
+| **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, with a gap wherever no gift request reached a decision. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
 | **Agent logs** (`/logs`) | A **transcript** by default, read as a decision record: each turn opens with what was decided and the facts behind it (gift, order, failed criteria, the alternative offered, the escalation trigger), then a trace where every step is a sentence — *"Checked Barrier Repair Serum against the brand's criteria — qualifies"* — rather than a tool name and a JSON blob. A turn's model calls are one expandable step. Escalated conversations are marked in the list, and an admin can hand one back to the agent. Raw payloads are one click away, and **Raw events** is a tab away for the flat stream. Filter by creator, conversation, agent or event type. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
@@ -266,8 +266,9 @@ latest outcome, mapped onto three buckets:
 
 `details_required` counts as *other* on purpose: nothing has been decided yet, and calling it an
 approval would be a lie. Escalation is its own row rather than a kind of *other*, because "how often
-did this need a person?" is the question the feature exists to answer. The raw outcome breakdown
-under the rows is there so the buckets stay readable.
+did this need a person?" is the question the feature exists to answer. The approval rate chart uses
+only the first two rows: the denominator is gift requests that reached a decision, so questions and
+escalations cannot dilute it into meaninglessness.
 
 ### Sample history
 
@@ -298,8 +299,7 @@ Two consequences worth knowing:
 
 - **Each sample conversation gets its own session**, because the duplicate guard keys on the
   session. Sharing one session turned every repeat order into a duplicate instead of a second gift.
-  Both pages therefore treat sample conversations as always visible, while live conversations stay
-  scoped to your own session.
+  Since the logs and the dashboard cover every session anyway, this costs nothing.
 - **`SEED_DEMO_HISTORY=1`** generates it at boot when there is none, which is how the live demo is
   populated without anyone clicking anything. It is off by default, so a local run and the test
   suite never get it by surprise.
@@ -313,6 +313,7 @@ Two consequences worth knowing:
 | Backend | FastAPI + Uvicorn, Pydantic v2, SQLAlchemy 2 async + aiosqlite | Fast to build, fully typed, same pattern as my other projects |
 | LLM access | OpenRouter via the OpenAI-compatible SDK | One key, any model, per-agent model selection, real cost data returned |
 | Frontend | React 19 + Vite, plain CSS, `react-router-dom` | No build complexity, no UI framework, quick to load |
+| Charts | Hand-rolled SVG in `components/Chart.jsx` | No chart dependency: the geometry lives in `analyticsModel.js` where it can be checked without a browser |
 | Deployment | Render Blueprint, single Docker web service | One URL to share, blueprint-managed env vars |
 
 ### Default models and cost
@@ -489,12 +490,26 @@ negative, and the `id` in the body must match the path.
 
 | Endpoint | Access | Purpose |
 |---|---|---|
-| `GET /api/analytics?days=&interval=&scope=` | public (`scope=all` needs the passcode) | Conversation counts by intent, disposition counts and rates, the raw outcome breakdown, and the timeseries the chart draws |
+| `GET /api/analytics?days=&interval=` | public | Conversation counts by intent, disposition counts and rates, the raw outcome breakdown, and the bucketed series the three charts draw |
 
-| `days` is 1–365 (the UI offers 7 / 30 / 90), `interval` is `day` | `week` | `month`, and `scope` is
-`session` | `all`. Buckets are computed in Python rather than in SQL, because SQLite and Postgres
-disagree about date truncation and at this volume it costs nothing — which also means empty buckets
-are filled in, so the chart keeps a continuous time axis instead of collapsing quiet days.
+`days` is 1–365 (the UI offers 7 / 30 / 90) and `interval` is `day` | `week` | `month`. Every session
+is included — there is no "my session" view, because a dashboard that hides most of its data is not a
+dashboard, and the logs work the same way. Buckets are computed in Python rather than in SQL, because
+SQLite and Postgres disagree about date truncation and at this volume it costs nothing — which also
+means empty buckets are filled in, so the charts keep a continuous time axis instead of collapsing
+quiet days.
+
+Each bucket reports:
+
+| Field | Meaning |
+|---|---|
+| `total`, `counts` | conversations in the bucket, split by intent |
+| `dispositions` | the same conversations split by disposition — all four keys, always, so a stacked chart has a value for every series |
+| `approved`, `denied`, `decided` | gift requests that reached a decision |
+| `approval_rate` | `approved / decided`, or **`null`** when nothing was decided |
+
+`null` rather than `0` on purpose: a bucket where no gift request was decided has no approval rate,
+and plotting it as 0% would invent a cliff that never happened. The line breaks instead.
 
 ### Escalation
 
@@ -614,8 +629,9 @@ backend/
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  Transcript, transcriptModel (its reading logic, no React),
-                   analyticsModel (its shaping, no React), EventTimeline,
-                   CriteriaTable, CriteriaBuilder, GiftRows, AdminFields, ui
+                   analyticsModel (chart geometry, no React), Chart (the SVG
+                   renderers), EventTimeline, CriteriaTable, CriteriaBuilder,
+                   GiftRows, AdminFields, ui
 scripts/           smoke_demo.py, debug_turn.py, seed_history.py
 render.yaml, Dockerfile, DEPLOYMENT.md
 ```

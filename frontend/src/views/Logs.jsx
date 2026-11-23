@@ -6,7 +6,6 @@ import Transcript from '../components/Transcript.jsx'
 import { Badge, ErrorNote, Spinner } from '../components/ui.jsx'
 
 const EMPTY_FILTERS = {
-  scope: 'session',
   creator_id: '',
   conversation_id: '',
   agent: '',
@@ -29,7 +28,6 @@ export default function Logs() {
   const query = useCallback(
     (afterId) => {
       const params = new URLSearchParams()
-      params.set('scope', filters.scope)
       params.set('limit', '300')
       params.set('after_id', String(afterId))
       for (const key of ['creator_id', 'conversation_id', 'agent', 'event_type']) {
@@ -150,19 +148,6 @@ export default function Logs() {
         </div>
 
         <label className="field inline">
-          <span>Scope</span>
-          <select
-            value={filters.scope}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, scope: event.target.value }))
-            }
-          >
-            <option value="session">My session + samples</option>
-            <option value="all">All sessions (needs passcode)</option>
-          </select>
-        </label>
-
-        <label className="field inline">
           <span>Creator</span>
           <select
             value={filters.creator_id}
@@ -251,7 +236,7 @@ export default function Logs() {
               ↓ Transcript JSON
             </a>
           )}
-          {filters.scope === 'all' && <Badge tone="amber">all sessions</Badge>}
+          <Badge tone="amber">all sessions</Badge>
           {selected?.status === 'escalated' && <Badge tone="slate">with a human</Badge>}
           {hasPasscode && selected?.status === 'escalated' && (
             <button type="button" className="btn btn-ghost btn-sm" onClick={release}>

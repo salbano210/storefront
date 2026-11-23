@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import pytest
 from conftest import ADMIN_HEADERS
+from httpx import ASGITransport, AsyncClient
 
 from app.db import AsyncSessionLocal
+from app.main import app
 from app.models import Conversation
 
 pytestmark = pytest.mark.asyncio
@@ -229,22 +231,74 @@ async def test_the_range_is_reported_back_for_the_selector(client, use_fake_llm)
 
 
 # ---------------------------------------------------------------------------
-# Scope
+# Every session, and the time series
 # ---------------------------------------------------------------------------
-async def test_all_sessions_scope_requires_the_admin_passcode(client, use_fake_llm):
+async def test_every_session_is_counted(client, use_fake_llm):
+    """A dashboard that hides most of its data is not a dashboard."""
     use_fake_llm()
     await approve_a_gift(client, "creator_001")
 
-    denied = await client.get("/api/analytics", params={"scope": "all"})
-    assert denied.status_code == 401
-    assert denied.json()["detail"]["code"] == "admin_passcode_required"
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://other") as other:
+        response = await other.post(
+            "/api/chat", json={"creator_id": "creator_002", "message": "What products do you sell?"}
+        )
+        assert response.status_code == 200
 
-    allowed = await client.get(
-        "/api/analytics", params={"scope": "all"}, headers=ADMIN_HEADERS
-    )
-    assert allowed.status_code == 200
-    assert allowed.json()["scope"] == "all"
-    assert allowed.json()["totals"]["conversations"] >= 1
+        data = await analytics(other)
+        assert data["totals"]["conversations"] == 2
+        assert data["totals"]["live"] == 2
+
+
+async def test_the_series_carries_dispositions_and_the_approval_rate(client, use_fake_llm):
+    use_fake_llm()
+    await approve_a_gift(client, "creator_001")
+    denied = await chat(client, "creator_004", "Can I get the Barrier Repair Serum?")
+    assert denied["outcome"]["type"] == "gift_declined"
+    await chat(client, "creator_002", "What products do you sell?")
+
+    data = await analytics(client, days=7, interval="day")
+    today = data["series"][-1]
+
+    assert today["dispositions"]["gift_request_approved"] == 1
+    assert today["dispositions"]["gift_request_denied"] == 1
+    assert today["dispositions"]["other"] == 1
+    assert today["dispositions"]["escalated"] == 0
+    assert today["decided"] == 2
+    assert today["approval_rate"] == pytest.approx(0.5)
+    assert data["totals"]["decided"] == 2
+    assert data["totals"]["approval_rate"] == pytest.approx(0.5)
+
+    # Every bucket reports all four dispositions, so a stacked chart has a value
+    # for every series even on quiet days.
+    assert all(len(row["dispositions"]) == 4 for row in data["series"])
+
+
+async def test_the_approval_rate_is_none_where_nothing_was_decided(client, use_fake_llm):
+    """A gap in the line, not a fabricated 0%."""
+    use_fake_llm()
+    await chat(client, "creator_002", "What products do you sell?")
+
+    data = await analytics(client, days=7, interval="day")
+
+    assert data["totals"]["decided"] == 0
+    assert data["totals"]["approval_rate"] is None
+    assert all(row["approval_rate"] is None for row in data["series"])
+    assert all(row["decided"] == 0 for row in data["series"])
+
+
+async def test_the_approval_rate_ignores_questions_and_escalations(client, use_fake_llm):
+    """The denominator is decided gift requests, not every conversation."""
+    use_fake_llm()
+    await approve_a_gift(client, "creator_001")
+    await chat(client, "creator_002", "What products do you sell?")
+    await chat(client, "creator_003", "I need to speak to a human, please.")
+
+    data = await analytics(client)
+
+    assert data["totals"]["conversations"] == 3
+    assert data["totals"]["decided"] == 1
+    assert data["totals"]["approval_rate"] == 1.0
 
 
 async def test_an_empty_session_reports_zeroes_not_an_error(client):

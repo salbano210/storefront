@@ -34,33 +34,31 @@ async def _chat(client, message: str = "I'd love the Barrier Repair Serum"):
     )
 
 
-async def test_logs_are_scoped_to_the_session(client, use_fake_llm):
+async def test_logs_cover_every_session(client, use_fake_llm):
+    """There is no session filter: the logs are the whole point of the demo."""
     use_fake_llm()
     response = await _chat(client)
     assert response.status_code == 200
+    conversation_id = response.json()["conversation_id"]
 
     mine = (await client.get("/api/logs")).json()
     assert mine["count"] > 0
 
+    # A different browser sees the same stream, without a passcode.
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://other") as other:
-        theirs = (await other.get("/api/logs")).json()
-        assert theirs["count"] == 0
+        theirs = await other.get("/api/logs")
+        assert theirs.status_code == 200
+        assert theirs.json()["count"] == mine["count"]
 
-        conversation_id = response.json()["conversation_id"]
-        blocked = await other.get(f"/api/conversations/{conversation_id}")
-        assert blocked.status_code == 404
+        listing = (await other.get("/api/logs/meta")).json()
+        assert conversation_id in [item["id"] for item in listing["conversations"]]
+        transcript = await other.get(f"/api/logs?conversation_id={conversation_id}")
+        assert transcript.json()["events"]
 
-
-async def test_all_sessions_scope_requires_passcode(client, use_fake_llm):
-    use_fake_llm()
-    await _chat(client)
-
-    assert (await client.get("/api/logs", params={"scope": "all"})).status_code == 401
-    allowed = await client.get("/api/logs", params={"scope": "all"}, headers=ADMIN_HEADERS)
-    assert allowed.status_code == 200
-    assert allowed.json()["scope"] == "all"
-    assert allowed.json()["count"] > 0
+        # The chat's own history is still the browser's own: that is a conversation
+        # being restored, not a dashboard.
+        assert (await other.get(f"/api/conversations/{conversation_id}")).status_code == 404
 
 
 async def test_host_key_never_reaches_the_logs(client, use_fake_llm):

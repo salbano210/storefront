@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, formatters } from '../api'
 import { useSession } from '../session.jsx'
 import { EmptyState, ErrorNote, Spinner } from '../components/ui.jsx'
+import { RateLine, StackedBars } from '../components/Chart.jsx'
 import {
-  chart,
+  approvalChart,
   dispositions,
+  dispositionChart,
   headline,
+  intentChart,
   legend,
   outcomes,
 } from '../components/analyticsModel.js'
@@ -26,11 +29,24 @@ const INTERVALS = [
 // taking more than a couple of seconds.
 const SAMPLE = { days: 90, count: 120 }
 
+function Legend({ rows, toneKey }) {
+  return (
+    <div className="analytics-legend">
+      {rows.map((row) => (
+        <span className="legend-item" key={row[toneKey]}>
+          <span className={`dot dot-${row.tone}`} />
+          {row.label}
+          <span className="muted">{row.count}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function Analytics() {
   const { hasPasscode } = useSession()
   const [days, setDays] = useState(30)
   const [interval, setBucketInterval] = useState('day')
-  const [scope, setScope] = useState('session')
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -39,7 +55,7 @@ export default function Analytics() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ days: String(days), interval, scope })
+      const params = new URLSearchParams({ days: String(days), interval })
       setData(await api(`/api/analytics?${params}`))
       setError(null)
     } catch (err) {
@@ -48,7 +64,7 @@ export default function Analytics() {
     } finally {
       setLoading(false)
     }
-  }, [days, interval, scope])
+  }, [days, interval])
 
   useEffect(() => {
     load()
@@ -74,12 +90,15 @@ export default function Analytics() {
   )
 
   const stats = data ? headline(data) : null
-  const columns = data ? chart(data).columns : []
   const intentRows = data ? legend(data) : []
   const dispositionRows = data ? dispositions(data) : []
   const outcomeRows = data ? outcomes(data) : []
   const sampleCount = data?.totals.seeded ?? 0
   const hasSample = sampleCount > 0
+  const approvalRate = data?.totals.approval_rate
+  const decided = data?.totals.decided ?? 0
+  const rateLabel =
+    approvalRate === null || approvalRate === undefined ? '—' : formatters.pct(approvalRate)
 
   return (
     <div className="page">
@@ -90,6 +109,7 @@ export default function Analytics() {
           <p className="lede">
             How many conversations we had, what they were about, and how they ended. Every number
             is read from the conversation record the agents wrote — not re-derived from the log.
+            Every session is included.
           </p>
         </div>
         {stats && (
@@ -103,26 +123,18 @@ export default function Analytics() {
               <span className="stat-label">gift requests</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{stats.approved}</span>
-              <span className="stat-label">approved</span>
+              <span className="stat-value">{rateLabel}</span>
+              <span className="stat-label">approval rate · {decided} decided</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{stats.denied}</span>
-              <span className="stat-label">denied</span>
+              <span className="stat-value">{stats.escalated}</span>
+              <span className="stat-label">escalated to a human</span>
             </div>
           </div>
         )}
       </header>
 
       <div className="logs-toolbar">
-        <label className="field inline">
-          <span>Scope</span>
-          <select value={scope} onChange={(event) => setScope(event.target.value)}>
-            <option value="session">My session</option>
-            <option value="all">All sessions (needs passcode)</option>
-          </select>
-        </label>
-
         <label className="field inline">
           <span>Date range</span>
           <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
@@ -161,7 +173,11 @@ export default function Analytics() {
               disabled={busy}
               title="Generate backdated conversations by driving the real agents with an offline model. They are labelled as sample data."
             >
-              {busy ? 'Working…' : hasSample ? 'Regenerate sample history' : 'Generate sample history'}
+              {busy
+                ? 'Working…'
+                : hasSample
+                  ? 'Regenerate sample history'
+                  : 'Generate sample history'}
             </button>
           )}
           {hasPasscode && hasSample && (
@@ -205,82 +221,18 @@ export default function Analytics() {
         <>
           <section className="analytics-card">
             <header>
-              <h2>Conversation count by intent</h2>
-              <div className="analytics-legend">
-                {intentRows.map((row) => (
-                  <span className="legend-item" key={row.intent}>
-                    <span className={`dot dot-${row.tone}`} />
-                    {row.label}
-                    <span className="muted">{row.count}</span>
-                  </span>
-                ))}
-              </div>
+              <h2>Conversations by intent</h2>
+              <Legend rows={intentRows} toneKey="intent" />
             </header>
-
-            <div className="chart">
-              {columns.map((column) => (
-                <div className="chart-col" key={column.bucket} title={column.title}>
-                  <div className="chart-stack">
-                    {column.segments.map((segment) => (
-                      <span
-                        key={segment.intent}
-                        className={`chart-seg seg-${segment.tone}`}
-                        style={{ height: `${segment.height}%` }}
-                      />
-                    ))}
-                  </div>
-                  <span className="chart-label">{column.showLabel ? column.label : ''}</span>
-                </div>
-              ))}
-            </div>
-
-            <table className="criteria">
-              <thead>
-                <tr>
-                  <th>Intent</th>
-                  <th>Conversations</th>
-                  <th>Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {intentRows.map((row) => (
-                  <tr key={row.intent}>
-                    <td>
-                      <span className="criteria-label">{row.label}</span>
-                    </td>
-                    <td className="mono">{row.count}</td>
-                    <td className="mono">{formatters.pct(row.count / stats.conversations)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <StackedBars build={(width) => intentChart(data, { width })} />
           </section>
 
           <section className="analytics-card">
             <header>
-              <h2>Disposition</h2>
-              <span className="muted small">
-                How each of the {stats.conversations} conversations ended
-              </span>
+              <h2>Dispositions over time</h2>
+              <Legend rows={dispositionRows} toneKey="disposition" />
             </header>
-
-            <ul className="disposition-list">
-              {dispositionRows.map((row) => (
-                <li className="disposition-row" key={row.disposition}>
-                  <span className={`dot dot-${row.tone}`} />
-                  <span className="disposition-name">{row.label}</span>
-                  <span className="disposition-bar">
-                    <span
-                      className={`disposition-fill fill-${row.tone}`}
-                      style={{ width: `${row.width}%` }}
-                    />
-                  </span>
-                  <span className="disposition-count mono">{row.count}</span>
-                  <span className="disposition-rate mono">{formatters.pct(row.rate)}</span>
-                </li>
-              ))}
-            </ul>
-
+            <StackedBars build={(width) => dispositionChart(data, { width })} />
             {outcomeRows.length > 0 && (
               <div className="outcome-note">
                 <span className="muted small">
@@ -295,6 +247,21 @@ export default function Analytics() {
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="analytics-card">
+            <header>
+              <h2>Gift request approval rate</h2>
+              <span className="muted small">
+                Approved share of gift requests that reached a decision
+                {decided ? ` · ${rateLabel} overall, from ${decided}` : ' · nothing decided yet'}
+              </span>
+            </header>
+            <RateLine build={(width) => approvalChart(data, { width })} />
+            <p className="muted small chart-note">
+              A gap means no gift request was decided in that bucket, so there is no rate to plot.
+              Questions and escalations are not counted as denials.
+            </p>
           </section>
         </>
       )}

@@ -37,8 +37,8 @@ async def create_sample_history(
     """Generate sample conversations, replacing any sample history already present.
 
     Each conversation gets its own session, so the per-session duplicate guard
-    behaves as it does in real life. Both the logs and the dashboard show sample
-    conversations in their default scope, labelled.
+    behaves as it does in real life. Both the logs and the dashboard cover every
+    session, and label sample conversations wherever they appear.
     """
     summary = await seeder.seed_history(
         db, count=payload.count, days=payload.days, seed=payload.seed

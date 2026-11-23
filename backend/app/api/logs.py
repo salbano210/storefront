@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import orchestrator
@@ -22,21 +22,9 @@ from .deps import event_out, is_admin, session_id
 router = APIRouter(prefix="/api", tags=["logs"])
 
 
-def _sample_conversation_ids():
-    """Subquery: the ids of every sample conversation.
-
-    Sample history lives in its own sessions so the per-session duplicate guard
-    behaves, which means "my session" has to reach across to find it.
-    """
-    return select(Conversation.id).where(Conversation.source == seeder.SAMPLE_SOURCE)
-
-
 @router.get("/logs")
 async def list_logs(
-    request: Request,
     db: AsyncSession = Depends(get_db),
-    sid: str = Depends(session_id),
-    scope: str = Query("session", pattern="^(session|all)$"),
     creator_id: str | None = None,
     conversation_id: str | None = None,
     agent: str | None = None,
@@ -44,26 +32,12 @@ async def list_logs(
     after_id: int = 0,
     limit: int = Query(200, ge=1, le=500),
 ) -> dict:
-    if scope == "all" and not is_admin(request):
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "code": "admin_passcode_required",
-                "message": "Enter the demo admin passcode to view every session's logs.",
-            },
-        )
+    """The event stream, across every session.
 
+    There is no session filter: the logs are the point of the demo, and a view
+    that hides most of the traffic is not worth having.
+    """
     query = select(Event).where(Event.id > after_id)
-    if scope == "session":
-        # The visitor's own turns, plus the sample history. Sample conversations
-        # live in their own sessions (so the duplicate guard behaves), which is why
-        # this is an OR rather than a session filter.
-        query = query.where(
-            or_(
-                Event.session_id == sid,
-                Event.conversation_id.in_(_sample_conversation_ids()),
-            )
-        )
     if creator_id:
         query = query.where(Event.creator_id == creator_id)
     if conversation_id:
@@ -74,35 +48,15 @@ async def list_logs(
         query = query.where(Event.type == event_type)
 
     rows = list(await db.scalars(query.order_by(Event.id.asc()).limit(limit)))
-    return {"scope": scope, "count": len(rows), "events": [event_out(row) for row in rows]}
+    return {"count": len(rows), "events": [event_out(row) for row in rows]}
 
 
 @router.get("/logs/meta")
-async def logs_meta(
-    db: AsyncSession = Depends(get_db), sid: str = Depends(session_id)
-) -> dict:
+async def logs_meta(db: AsyncSession = Depends(get_db)) -> dict:
     conversations = list(
-        await db.scalars(
-            select(Conversation)
-            .where(
-                or_(
-                    Conversation.session_id == sid,
-                    Conversation.source == seeder.SAMPLE_SOURCE,
-                )
-            )
-            .order_by(Conversation.created_at.desc())
-        )
+        await db.scalars(select(Conversation).order_by(Conversation.created_at.desc()))
     )
-    rows = list(
-        await db.scalars(
-            select(Event).where(
-                or_(
-                    Event.session_id == sid,
-                    Event.conversation_id.in_(_sample_conversation_ids()),
-                )
-            )
-        )
-    )
+    rows = list(await db.scalars(select(Event)))
     return {
         "event_types": list(ALL_EVENT_TYPES),
         "seen_event_types": sorted({row.type for row in rows}),
