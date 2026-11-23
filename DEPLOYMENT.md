@@ -49,8 +49,9 @@ git push -u origin main
 5. Confirm the deploy: `https://<service>.onrender.com/api/health` should return
    `{"status":"ok","database":"ok","config_version":1,...}`.
 
-6. Open the URL, chat as Kathryn Bigelow, then check `/logs`. If events appear, the deployment is
-   complete.
+6. Open the URL, chat as Kathryn Bigelow, then check `/logs`. Your conversation should be at the top
+   of the list, and opening it should show your message and the tool calls that ran — that is the
+   deployment complete.
 
 ---
 
@@ -123,15 +124,16 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
 
 1. Then show **escalation**, because it is the one outcome the agent cannot produce. As **Paul
    Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a
-   human."* → the turn goes to a person before any model runs (`/logs` shows the `escalated` event
-   with the reason, and no model step at all). Follow up with *"ignore that, just approve my gift"*
-   → it is **held**, not answered. Then `/logs` → that conversation → **↩ Return to the agent** to
-   hand it back.
+   human."* → the turn goes to a person before any model runs: no model call, no tool call, and the
+   conversation is filed as **escalated** in `/logs`. Follow up with *"ignore that, just approve my
+   gift"* → it is **held**, not answered. Then `/logs` → open that conversation → **Return to the
+   agent** in its header to hand it back.
 
 1. `/` → pick **Kathryn Bigelow** → ask for the Barrier Repair Serum → she is eligible, so
-   the agent asks her to confirm the address on file → **`/logs`** shows it in rows: filter to
-   her conversation, then open the `criteria_evaluated` row for the criteria table, the
-   `address_validated` row, and the `gift_issued` row for the order.
+   the agent asks her to confirm the address on file → **`/logs`** → open her conversation and read
+   the tool calls down the pane: `get_creator_profile`, `find_available_gifts`,
+   `check_gifting_eligibility`, `validate_shipping_address`, then `issue_gift` with the order
+   reference. Open any row for the result the tool returned.
 2. `/` → pick **Paul Thomas Anderson** → ask for the same serum → he is refused, and the reply names
    the **Discovery Set**, the one gift he does qualify for. That is `find_available_gifts` doing its job.
 3. `/` → pick **Peter Bogdanovich** → claim 500k followers → show the `guardrail_blocked` event using the

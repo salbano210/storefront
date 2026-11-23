@@ -51,31 +51,50 @@ async def list_logs(
     return {"count": len(rows), "events": [event_out(row) for row in rows]}
 
 
+async def _distinct(db: AsyncSession, column) -> list[str]:
+    """The values actually present in the log, for the filter vocabularies."""
+    rows = await db.scalars(
+        select(column).where(column.is_not(None)).distinct().order_by(column)
+    )
+    return [value for value in rows if value]
+
+
 @router.get("/logs/meta")
 async def logs_meta(db: AsyncSession = Depends(get_db)) -> dict:
+    """The conversation index the logs page is built on, plus the filter vocabularies.
+
+    Aggregates rather than loading the event table: the page polls this while it is
+    live, and reading every event to count them is not something to do every couple of
+    seconds. The creator names come from one query for the same reason -- asking per
+    conversation is 240 queries on a page that has 240 conversations in it.
+    """
     conversations = list(
         await db.scalars(select(Conversation).order_by(Conversation.created_at.desc()))
     )
-    rows = list(await db.scalars(select(Event)))
+    names = {profile.id: profile.name for profile in await data_store.list_profiles(db)}
     return {
-        "event_types": list(ALL_EVENT_TYPES),
-        "seen_event_types": sorted({row.type for row in rows}),
-        "agents": sorted({row.agent for row in rows if row.agent}),
-        "creator_ids": sorted({row.creator_id for row in rows if row.creator_id}),
         "conversations": [
             {
                 "id": item.id,
                 "creator_id": item.creator_id,
-                "creator_name": await _creator_name(db, item.creator_id),
+                "creator_name": names.get(item.creator_id, item.creator_id),
                 "created_at": store.iso(item.created_at),
                 "updated_at": store.iso(item.updated_at),
                 "status": item.status,
+                # What the sidebar files each conversation under, and what the detail
+                # header names it by.
+                "intent": item.intent,
+                "disposition": item.disposition,
                 "config_version": item.config_version,
                 "source": item.source or seeder.LIVE_SOURCE,
             }
             for item in conversations
         ],
-        "total_events": len(rows),
+        "event_types": list(ALL_EVENT_TYPES),
+        "seen_event_types": await _distinct(db, Event.type),
+        "agents": await _distinct(db, Event.agent),
+        "creator_ids": await _distinct(db, Event.creator_id),
+        "total_events": int(await db.scalar(select(func.count(Event.id))) or 0),
     }
 
 

@@ -1,101 +1,117 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, formatters } from '../api'
-import { useSession } from '../session.jsx'
-import EventTable from '../components/EventTable.jsx'
-import TurnTable from '../components/TurnTable.jsx'
-import { Badge, EmptyState, ErrorNote, Spinner } from '../components/ui.jsx'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-const EMPTY_FILTERS = {
-  creator_id: '',
-  conversation_id: '',
-  agent: '',
-  event_type: '',
-}
+import { api } from '../api'
+import { useSession } from '../session.jsx'
+import ConversationDetail from '../components/ConversationDetail.jsx'
+import ConversationList from '../components/ConversationList.jsx'
+import { ErrorNote } from '../components/ui.jsx'
+
+/* ---------------------------------------------------------------------------
+ * The logs: a conversation browser.
+ *
+ * Left is the index -- every conversation, newest first, filed by disposition.
+ * Right is the one you picked: its messages, and the tool calls that ran between
+ * them.
+ *
+ * The page holds two requests rather than one stream, which is what lets the live
+ * tail follow the conversation you are reading instead of appending to a wall of
+ * every event in the database.
+ * ------------------------------------------------------------------------- */
+
+const POLL_MS = 1500
+// The index is re-read less often than the open conversation: a new conversation
+// appearing is worth a few seconds, a new turn in the one you are reading is not.
+const INDEX_EVERY = 5
 
 export default function Logs() {
   const { hasPasscode, savePasscode } = useSession()
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
-  const [events, setEvents] = useState([])
   const [meta, setMeta] = useState(null)
+  const [selectedId, setSelectedId] = useState(null)
+  const [events, setEvents] = useState([])
   const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [live, setLive] = useState(true)
-  const [view, setView] = useState('events')
   const [passcodeDraft, setPasscodeDraft] = useState('')
   const lastIdRef = useRef(0)
 
-  const query = useCallback(
-    (afterId) => {
-      const params = new URLSearchParams()
-      params.set('limit', '300')
-      params.set('after_id', String(afterId))
-      for (const key of ['creator_id', 'conversation_id', 'agent', 'event_type']) {
-        if (filters[key]) params.set(key, filters[key])
-      }
-      return params.toString()
-    },
-    [filters],
-  )
+  const conversations = meta?.conversations || []
+  const selected = conversations.find((item) => item.id === selectedId) || null
 
-  const load = useCallback(
-    async (reset) => {
-      if (reset) {
-        lastIdRef.current = 0
-        setEvents([])
-      }
-      const data = await api(`/api/logs?${query(lastIdRef.current)}`)
-      if (data.events.length) {
-        lastIdRef.current = Math.max(...data.events.map((event) => event.id))
-        setEvents((previous) => (reset ? data.events : [...previous, ...data.events]))
-      }
-      setError(null)
-    },
-    [query],
-  )
+  const loadIndex = useCallback(async () => {
+    const data = await api('/api/logs/meta')
+    setMeta(data)
+    return data
+  }, [])
+
+  const loadEvents = useCallback(async (conversationId, append = false) => {
+    if (!conversationId) return
+    if (!append) lastIdRef.current = 0
+    const params = new URLSearchParams({
+      conversation_id: conversationId,
+      limit: '500',
+      after_id: String(lastIdRef.current),
+    })
+    const data = await api(`/api/logs?${params}`)
+    if (data.events.length) {
+      lastIdRef.current = Math.max(...data.events.map((event) => event.id))
+      setEvents((previous) => (append ? [...previous, ...data.events] : data.events))
+    } else if (!append) {
+      setEvents([])
+    }
+  }, [])
+
+  // The index, once. The newest conversation opens for you, so the page is never
+  // half empty on arrival.
+  useEffect(() => {
+    loadIndex()
+      .then((data) => {
+        if (data.conversations.length) {
+          setSelectedId((current) => current || data.conversations[0].id)
+        }
+      })
+      .catch(setError)
+  }, [loadIndex])
 
   useEffect(() => {
-    api('/api/logs/meta')
-      .then(setMeta)
-      .catch(() => {})
-  }, [events.length])
-
-  useEffect(() => {
+    if (!selectedId) return
     setLoading(true)
-    load(true)
-      .catch((err) => setError(err))
+    loadEvents(selectedId)
+      .then(() => setError(null))
+      .catch(setError)
       .finally(() => setLoading(false))
-  }, [load])
+  }, [selectedId, loadEvents])
 
   useEffect(() => {
     if (!live) return undefined
+    let tick = 0
     const timer = setInterval(() => {
-      load(false).catch(() => {})
-    }, 1500)
+      tick += 1
+      if (selectedId) loadEvents(selectedId, true).catch(() => {})
+      if (tick % INDEX_EVERY === 0) loadIndex().catch(() => {})
+    }, POLL_MS)
     return () => clearInterval(timer)
-  }, [live, load])
+  }, [live, selectedId, loadEvents, loadIndex])
 
-  const stats = useMemo(() => {
-    const cost = events.reduce((total, event) => total + (event.cost_usd || 0), 0)
-    const tokens = events.reduce(
-      (total, event) => total + (event.tokens_in || 0) + (event.tokens_out || 0),
-      0,
-    )
-    const blocked = events.filter((event) => event.status === 'blocked').length
-    return { cost, tokens, blocked, count: events.length }
-  }, [events])
-
-  const conversations = meta?.conversations || []
-  const needsPasscode = error?.code === 'admin_passcode_required'
-  const selected = conversations.find((item) => item.id === filters.conversation_id)
-
-  async function release() {
+  async function refresh() {
+    setError(null)
     try {
-      await api(`/api/conversations/${filters.conversation_id}/escalation`, { method: 'DELETE' })
-      await load(true)
+      await loadIndex()
+      await loadEvents(selectedId)
     } catch (err) {
       setError(err)
     }
   }
+
+  async function release() {
+    try {
+      await api(`/api/conversations/${selectedId}/escalation`, { method: 'DELETE' })
+      await refresh()
+    } catch (err) {
+      setError(err)
+    }
+  }
+
+  const needsPasscode = error?.code === 'admin_passcode_required'
 
   return (
     <div className="page logs-page">
@@ -104,118 +120,19 @@ export default function Logs() {
           <p className="eyebrow">Observability</p>
           <h1>Agent logs</h1>
           <p className="lede">
-            Every event below was produced by real execution: routing decisions, handoffs, verified
-            profile lookups, criteria evaluations, tool calls, guardrail blocks and the final reply.
+            The audit trail behind every conversation. Pick one on the left to see its messages and
+            the tool calls that ran between them, in the order they happened. Every row was produced
+            by real execution: the payload behind each one is a click away, and the export carries
+            the whole event stream.
           </p>
-        </div>
-        <div className="stat-row">
-          <div className="stat">
-            <span className="stat-value">{stats.count}</span>
-            <span className="stat-label">events</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{stats.blocked}</span>
-            <span className="stat-label">guardrail blocks</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{stats.tokens.toLocaleString()}</span>
-            <span className="stat-label">tokens</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{formatters.cost(stats.cost)}</span>
-            <span className="stat-label">model spend</span>
-          </div>
         </div>
       </header>
 
       <div className="logs-toolbar">
-        <div className="tabs">
-          <button
-            type="button"
-            className={`tab ${view === 'events' ? 'active' : ''}`}
-            onClick={() => setView('events')}
-          >
-            Events
-          </button>
-          <button
-            type="button"
-            className={`tab ${view === 'turns' ? 'active' : ''}`}
-            onClick={() => setView('turns')}
-          >
-            Turns
-          </button>
-        </div>
-
-        <label className="field inline">
-          <span>Creator</span>
-          <select
-            value={filters.creator_id}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, creator_id: event.target.value }))
-            }
-          >
-            <option value="">Any</option>
-            {(meta?.creator_ids || []).map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field inline">
-          <span>Conversation</span>
-          <select
-            value={filters.conversation_id}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, conversation_id: event.target.value }))
-            }
-          >
-            <option value="">Any</option>
-            {conversations.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.source === 'seeded' ? '[sample] ' : ''}
-                {item.status === 'escalated' ? '[with a human] ' : ''}
-                {item.creator_name} · {formatters.dateTime(item.created_at)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field inline">
-          <span>Agent</span>
-          <select
-            value={filters.agent}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, agent: event.target.value }))
-            }
-          >
-            <option value="">Any</option>
-            {(meta?.agents || []).map((agent) => (
-              <option key={agent} value={agent}>
-                {agent}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field inline">
-          <span>Event type</span>
-          <select
-            value={filters.event_type}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, event_type: event.target.value }))
-            }
-          >
-            <option value="">Any</option>
-            {(meta?.event_types || []).map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-
+        <span className="muted small">
+          {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
+          {meta ? ` · ${meta.total_events.toLocaleString()} events` : ''}
+        </span>
         <div className="toolbar-actions">
           <button
             type="button"
@@ -224,24 +141,9 @@ export default function Logs() {
           >
             {live ? 'Pause live' : 'Resume live'}
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => load(true)}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={refresh}>
             Refresh
           </button>
-          {filters.conversation_id && (
-            <a
-              className="btn btn-ghost btn-sm"
-              href={`/api/conversations/${filters.conversation_id}/export`}
-            >
-              Export JSON
-            </a>
-          )}
-          <Badge tone="amber">all sessions</Badge>
-          {selected?.status === 'escalated' && <Badge tone="slate">with a human</Badge>}
-          {hasPasscode && selected?.status === 'escalated' && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={release}>
-              ↩ Return to the agent
-            </button>
-          )}
         </div>
       </div>
 
@@ -253,11 +155,11 @@ export default function Logs() {
             savePasscode(passcodeDraft)
             setPasscodeDraft('')
             setTimeout(() => {
-              load(true).catch(setError)
+              refresh()
             }, 50)
           }}
         >
-          <span>Enter the demo passcode to view every session's logs:</span>
+          <span>Enter the demo passcode to hand a conversation back to the agent:</span>
           <input
             type="password"
             value={passcodeDraft}
@@ -270,21 +172,22 @@ export default function Logs() {
         </form>
       )}
 
-      <ErrorNote error={needsPasscode ? null : error} onRetry={() => load(true)} />
-      {loading && <Spinner label="Loading events" />}
+      <ErrorNote error={needsPasscode ? null : error} onRetry={refresh} />
 
-      {!loading && !events.length && (
-        <EmptyState title="No events yet">
-          Open the creator chat, send a message, and every routing decision, tool call and
-          guardrail check will appear here in real time.
-        </EmptyState>
-      )}
-
-      {view === 'events' ? (
-        <EventTable events={events} conversations={conversations} />
-      ) : (
-        <TurnTable events={events} conversations={conversations} />
-      )}
+      <div className="logs-layout">
+        <ConversationList
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+        <ConversationDetail
+          conversation={selected}
+          events={events}
+          loading={loading}
+          canRelease={hasPasscode}
+          onRelease={release}
+        />
+      </div>
     </div>
   )
 }

@@ -112,6 +112,11 @@ async def test_log_filters_and_meta(client, use_fake_llm):
     assert "gift_issued" in meta["event_types"]
     assert "gift_request_agent" in meta["agents"]
     assert meta["conversations"][0]["creator_name"] == "Kathryn Bigelow"
+    # The sidebar files each conversation under its disposition, and the detail header
+    # names the intent, so meta has to carry both.
+    assert meta["conversations"][0]["disposition"] == "gift_request_approved"
+    assert meta["conversations"][0]["intent"] == "gift_request"
+    assert meta["total_events"] > 0
 
     filtered = (await client.get("/api/logs", params={"agent": "gift_request_agent"})).json()
     assert filtered["count"] > 0
