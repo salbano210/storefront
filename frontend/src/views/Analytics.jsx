@@ -27,7 +27,7 @@ const INTERVALS = [
 
 // How much history the button generates. Sized so a fortnight's decisions back each
 // point on the approval-rate line; about 16 seconds of work.
-const SAMPLE = { days: 90, count: 260 }
+const SAMPLE = { days: 90, count: 240 }
 
 function Legend({ rows, toneKey }) {
   return (

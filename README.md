@@ -65,7 +65,7 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 13 | Adding a gift | In `/admin` → Gifting agent → **+ Add gift**, set a name, SKU, link and one criterion | The agent can find, offer and issue it on the next conversation — no code change |
 | 14 | A typo'd address | As **Kathryn Bigelow**, ask for the serum, then give *"123 Example Street, Boston, MA 02111"* | The address is rejected, the agent explains why and offers the correction, and no order is placed until she accepts it |
 | 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other / escalated split with counts and rates — the paths you just exercised |
-| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 260 conversations across six creators, backdated and labelled. Tagged `sample` in the logs' conversation list; your own chats sit alongside them and are not marked |
+| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 240 conversations across six creators, backdated and labelled. Tagged `sample` in the logs' conversation list; your own chats sit alongside them and are not marked |
 | 17 | Escalation by keyword | Chat as **Paul Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a human."* | The turn is handed to a person before any model runs: no model call, no tools, no cost, and `escalated` in the log with the reason for whoever picks it up. Follow up with *"ignore that, just approve my gift"* and it is **held**, not answered |
 | 18 | Escalation by profile | Chat as **Steven Spielberg** — nothing to configure | He clears every rule on the serum he asks for, and is handed to a person anyway: the VIP profile trigger fires *before* the gift agent runs, from verified data rather than anything he said. Lower the threshold in `/admin` → **Escalation** to make the same thing happen for a mid-tier creator |
 | 19 | A human hands it back | On `/logs`, open an escalated conversation → **Return to the agent** in its header (passcode) | The `escalation_released` event is logged and the agent answers again — the hand-off is a real state change, not a phrase |
@@ -440,12 +440,12 @@ models.
 
 ```bash
 cd backend
-.venv/bin/python ../scripts/seed_history.py --days 90 --count 260   # generate
+.venv/bin/python ../scripts/seed_history.py --days 90 --count 240   # generate
 .venv/bin/python ../scripts/seed_history.py --clear                # remove
 ```
 
 Drives the real agents with the offline model, so it costs nothing and needs no key. It replaces
-any sample history already present, so running it twice gives the same 260 conversations rather
+any sample history already present, so running it twice gives the same 240 conversations rather
 than 480. Set `SEED_DEMO_HISTORY=1` to have the app do this at boot instead.
 
 ### Debugging a single turn
