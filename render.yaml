@@ -27,3 +27,13 @@ services:
         value: "40"
       - key: DATA_DIR
         value: /app/data
+      # Free-tier storage is ephemeral, so the database is reseeded on every
+      # deploy. This generates a backdated sample history at boot when there is
+      # none, so /logs and /analytics are populated on a fresh instance. The
+      # conversations it makes are labelled as sample data.
+      - key: SEED_DEMO_HISTORY
+        value: "1"
+      - key: SEED_DEMO_DAYS
+        value: "90"
+      - key: SEED_DEMO_COUNT
+        value: "120"

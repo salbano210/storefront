@@ -57,6 +57,9 @@ class Conversation(Base):
     # The raw turn outcome behind the disposition, kept so the dashboard can break
     # the "other" bucket down instead of hiding it.
     last_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # "live" for a conversation a real person had; "seeded" for the sample history
+    # the seeder generates, so the UI can label it and never passes it off as real.
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True, default="live")
     config_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -58,6 +58,16 @@ SESSION_SECRET = _env("SESSION_SECRET", "dev-secret-change-me")
 SESSION_COOKIE = "storefront_session"
 SESSION_TTL_DAYS = _env_int("SESSION_TTL_DAYS", 30)
 
+# --- Sample history -------------------------------------------------------
+# The logs and the dashboard are empty on a fresh database, and the free-tier
+# deployment resets its database on every deploy. Set this and the app generates a
+# backdated sample history at boot when there is none, so the demo is populated
+# without anyone clicking anything. The conversations it makes are marked as sample
+# data and labelled in the UI.
+SEED_DEMO_HISTORY = _env("SEED_DEMO_HISTORY").lower() in {"1", "true", "yes", "on"}
+SEED_DEMO_DAYS = _env_int("SEED_DEMO_DAYS", 90)
+SEED_DEMO_COUNT = _env_int("SEED_DEMO_COUNT", 120)
+
 # --- Budget + abuse guards ------------------------------------------------
 MAX_DAILY_SPEND_USD = _env_float("MAX_DAILY_SPEND_USD", 2.0)
 SESSION_MESSAGE_CAP = _env_int("SESSION_MESSAGE_CAP", 40)

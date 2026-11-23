@@ -39,6 +39,8 @@ git push -u origin main
 | `OPENROUTER_APP_NAME` | Set | `storefront` (identifies the app in your OpenRouter dashboard). |
 | `MAX_DAILY_SPEND_USD` | Set | `2.0`. Hard ceiling on host-key spend per UTC day. |
 | `SESSION_MESSAGE_CAP` | Set | `40` messages per browser session. |
+| `SEED_DEMO_HISTORY` | Set | `1`. Generates a backdated sample history at boot when the database has none, so `/logs` and `/analytics` are populated on a fresh instance. Costs nothing (it uses the offline model) and takes a few seconds. |
+| `SEED_DEMO_DAYS` / `SEED_DEMO_COUNT` | Set | `90` / `120`. How far back to spread it, and how many conversations. |
 | `DATA_DIR` | Set | `/app/data`. |
 
 4. **Apply** and wait for the first build (2–4 minutes: it builds the frontend, then the Python
@@ -98,6 +100,9 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<service>.onrender.com/api/conf
 # analytics answers, and defaults to your own (empty) session
 curl -s 'https://<service>.onrender.com/api/analytics?days=7&interval=day'
 
+# sample history was generated at boot (seeded > 0 on a fresh instance)
+curl -s 'https://<service>.onrender.com/api/analytics?days=90&interval=week' | head -c 300
+
 # the metric registry still serves every gift-criteria metric
 curl -s https://<service>.onrender.com/api/config/metrics | head -c 200
 ```
@@ -106,6 +111,11 @@ A redeploy reseeds the brand config, so the config version goes up. The bundled 
 and the API always ship together, so a mismatch there means the deploy is still in flight.
 
 Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable presenter flow:
+
+0. Open `/analytics` first. The live demo seeds a 90-day sample history at boot, so the dashboard
+   and the logs are already populated — 120 conversations across five creators, backdated, and
+   labelled `[sample]` wherever they appear. That is the "what the system has been doing" picture;
+   everything below is you driving it live.
 
 1. `/` → pick **Kathryn Bigelow** → ask for the Barrier Repair Serum → she is eligible, so
    the agent asks her to confirm the address on file → **`/logs`** shows the transcript:

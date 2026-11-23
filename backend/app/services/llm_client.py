@@ -113,6 +113,79 @@ def _extract_cost(response: Any) -> float | None:
     return None
 
 
+def _safe_json(raw: str) -> Any:
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return raw
+
+
+def summarise_response(result: LLMResult, *, schema_name: str | None = None) -> str:
+    parts = [result.model]
+    if result.used_fallback:
+        parts.append(f"(fallback from {result.requested_model})")
+    if schema_name:
+        parts.append(f"schema={schema_name}")
+    if result.tool_calls:
+        parts.append("tools=" + ",".join(call.name for call in result.tool_calls))
+    parts.append(f"{result.latency_ms}ms")
+    if result.tokens_in is not None:
+        parts.append(f"{result.tokens_in}in/{result.tokens_out}out")
+    return " ".join(parts)
+
+
+async def log_response(
+    logger: EventLogger,
+    result: LLMResult,
+    *,
+    agent: str | None,
+    schema_name: str | None = None,
+    system: str = "",
+    messages: list[dict[str, Any]] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    temperature: float = 0.0,
+    retries: int = 0,
+) -> None:
+    """Record one model call in the audit trail.
+
+    One function rather than one per client, because the simulated model the
+    sample-history seeder drives has to emit the same event a real call does: a
+    sample transcript missing its model step would not be representative.
+    """
+    # Never persist a leaked system prompt: a creator can read their own session's
+    # logs, so echoing internal instructions back would hand them the configuration
+    # via the audit trail.
+    logged_text = result.text[:MAX_TEXT_PREVIEW]
+    if guardrails.find_prompt_leak(result.text):
+        logged_text = "[withheld: the model echoed its internal instructions]"
+    await logger.log(
+        events.LLM_RESPONSE,
+        agent=agent,
+        summary=summarise_response(result, schema_name=schema_name),
+        payload={
+            "model": result.model,
+            "requested_model": result.requested_model,
+            "used_fallback": result.used_fallback,
+            "retries": retries,
+            "temperature": temperature,
+            "system_prompt_chars": len(system),
+            "messages": messages or [],
+            "tools_available": [item["function"]["name"] for item in (tools or [])],
+            "tool_calls": [
+                {"name": call.name, "arguments": _safe_json(call.arguments)}
+                for call in result.tool_calls
+            ],
+            "text": logged_text,
+            "parsed": result.parsed,
+        },
+        model=result.model,
+        latency_ms=result.latency_ms,
+        tokens_in=result.tokens_in,
+        tokens_out=result.tokens_out,
+        cost_usd=result.cost_usd,
+    )
+
+
 def build_llm(
     api_key: str, *, logger: EventLogger | None = None, fallback_model: str | None = None
 ) -> LLMClient:
@@ -304,37 +377,16 @@ class LLMClient:
         )
 
         if self.logger is not None:
-            # Never persist a leaked system prompt: a creator can read their own
-            # session's logs, so echoing internal instructions back would hand
-            # them the configuration via the audit trail.
-            logged_text = text[:MAX_TEXT_PREVIEW]
-            if guardrails.find_prompt_leak(text):
-                logged_text = "[withheld: the model echoed its internal instructions]"
-            await self.logger.log(
-                events.LLM_RESPONSE,
+            await log_response(
+                self.logger,
+                result,
                 agent=agent,
-                summary=self._summary(result, schema_name=schema_name),
-                payload={
-                    "model": result.model,
-                    "requested_model": result.requested_model,
-                    "used_fallback": result.used_fallback,
-                    "retries": retries,
-                    "temperature": temperature,
-                    "system_prompt_chars": len(system),
-                    "messages": messages,
-                    "tools_available": [t["function"]["name"] for t in (tools or [])],
-                    "tool_calls": [
-                        {"name": call.name, "arguments": self._safe_json(call.arguments)}
-                        for call in tool_calls
-                    ],
-                    "text": logged_text,
-                    "parsed": result.parsed,
-                },
-                model=result.model,
-                latency_ms=result.latency_ms,
-                tokens_in=result.tokens_in,
-                tokens_out=result.tokens_out,
-                cost_usd=result.cost_usd,
+                schema_name=schema_name,
+                system=system,
+                messages=messages,
+                tools=tools,
+                temperature=temperature,
+                retries=retries,
             )
         return result
 
@@ -353,22 +405,9 @@ class LLMClient:
 
     @staticmethod
     def _safe_json(raw: str) -> Any:
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return raw
+        return _safe_json(raw)
 
     @staticmethod
     def _summary(result: LLMResult, *, schema_name: str | None = None) -> str:
-        parts = [result.model]
-        if result.used_fallback:
-            parts.append(f"(fallback from {result.requested_model})")
-        if schema_name:
-            parts.append(f"schema={schema_name}")
-        if result.tool_calls:
-            parts.append("tools=" + ",".join(call.name for call in result.tool_calls))
-        parts.append(f"{result.latency_ms}ms")
-        if result.tokens_in is not None:
-            parts.append(f"{result.tokens_in}in/{result.tokens_out}out")
-        return " ".join(parts)
+        return summarise_response(result, schema_name=schema_name)
 

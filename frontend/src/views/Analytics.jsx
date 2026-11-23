@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, formatters } from '../api'
+import { useSession } from '../session.jsx'
 import { EmptyState, ErrorNote, Spinner } from '../components/ui.jsx'
 import {
   chart,
@@ -21,13 +22,19 @@ const INTERVALS = [
   { id: 'month', label: 'Month' },
 ]
 
+// How much history the button generates. Sized to fill a 90-day chart without
+// taking more than a couple of seconds.
+const SAMPLE = { days: 90, count: 120 }
+
 export default function Analytics() {
+  const { hasPasscode } = useSession()
   const [days, setDays] = useState(30)
   const [interval, setBucketInterval] = useState('day')
   const [scope, setScope] = useState('session')
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -47,11 +54,32 @@ export default function Analytics() {
     load()
   }, [load])
 
+  const runSampleAction = useCallback(
+    async (method) => {
+      setBusy(true)
+      try {
+        await api('/api/admin/sample-history', {
+          method,
+          body: method === 'POST' ? SAMPLE : undefined,
+        })
+        setError(null)
+        await load()
+      } catch (err) {
+        setError(err)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [load],
+  )
+
   const stats = data ? headline(data) : null
   const columns = data ? chart(data).columns : []
   const intentRows = data ? legend(data) : []
   const dispositionRows = data ? dispositions(data) : []
   const outcomeRows = data ? outcomes(data) : []
+  const sampleCount = data?.totals.seeded ?? 0
+  const hasSample = sampleCount > 0
 
   return (
     <div className="page">
@@ -121,8 +149,30 @@ export default function Analytics() {
           {data && (
             <span className="muted small">
               {data.range.from} → {data.range.to}
+              {hasSample ? ` · ${sampleCount} sample` : ''}
               {loading ? ' · refreshing…' : ''}
             </span>
+          )}
+          {hasPasscode && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => runSampleAction('POST')}
+              disabled={busy}
+              title="Generate backdated conversations by driving the real agents with an offline model. They are labelled as sample data."
+            >
+              {busy ? 'Working…' : hasSample ? 'Regenerate sample history' : 'Generate sample history'}
+            </button>
+          )}
+          {hasPasscode && hasSample && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => runSampleAction('DELETE')}
+              disabled={busy}
+            >
+              Clear sample data
+            </button>
           )}
         </div>
       </div>
@@ -131,9 +181,23 @@ export default function Analytics() {
       {loading && !data && <Spinner label="Loading analytics" />}
 
       {data && stats.conversations === 0 && (
-        <EmptyState title="No conversations in this range">
-          Chat with a creator, then come back. Each conversation is counted once, by the intent the
-          intent agent settled on and the disposition it reached.
+        <EmptyState
+          title="No conversations in this range"
+          action={
+            hasPasscode ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => runSampleAction('POST')}
+                disabled={busy}
+              >
+                {busy ? 'Working…' : 'Generate sample history'}
+              </button>
+            ) : null
+          }
+        >
+          Chat with a creator, then come back. Or generate a backdated sample history — the agents
+          run for real, only the wording and the timestamps are synthetic.
         </EmptyState>
       )}
 

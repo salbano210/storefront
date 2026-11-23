@@ -147,7 +147,7 @@ export default function Logs() {
               setFilters((current) => ({ ...current, scope: event.target.value }))
             }
           >
-            <option value="session">My session</option>
+            <option value="session">My session + samples</option>
             <option value="all">All sessions (needs passcode)</option>
           </select>
         </label>
@@ -180,6 +180,7 @@ export default function Logs() {
             <option value="">Any</option>
             {conversations.map((item) => (
               <option key={item.id} value={item.id}>
+                {item.source === 'seeded' ? '[sample] ' : ''}
                 {item.creator_name} · {formatters.dateTime(item.created_at)}
               </option>
             ))}

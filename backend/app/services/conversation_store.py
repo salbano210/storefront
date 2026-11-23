@@ -35,13 +35,19 @@ async def get_or_create_session(db: AsyncSession, session_id: str) -> Session:
 
 
 async def create_conversation(
-    db: AsyncSession, *, session_id: str, creator_id: str, config_version: int
+    db: AsyncSession,
+    *,
+    session_id: str,
+    creator_id: str,
+    config_version: int,
+    source: str = "live",
 ) -> Conversation:
     row = Conversation(
         id=new_id("conv"),
         session_id=session_id,
         creator_id=creator_id,
         config_version=config_version,
+        source=source,
     )
     db.add(row)
     await db.commit()

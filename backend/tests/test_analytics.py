@@ -197,13 +197,15 @@ async def test_series_collapses_to_one_bucket_for_week_and_month(client, use_fak
     weekly = await analytics(client, days=7, interval="week")
     monthly = await analytics(client, days=7, interval="month")
 
-    assert len(weekly["series"]) == 1
-    assert weekly["series"][0]["total"] == 1
-    assert weekly["series"][0]["label"].startswith("wk ")
+    # Weekly buckets align to Mondays, and monthly ones to the 1st, so a 7-day
+    # window touches two buckets whenever it straddles one of those boundaries.
+    assert 1 <= len(weekly["series"]) <= 2, [row["bucket"] for row in weekly["series"]]
+    assert sum(row["total"] for row in weekly["series"]) == 1
+    assert all(row["label"].startswith("wk ") for row in weekly["series"])
 
-    assert len(monthly["series"]) == 1
-    assert monthly["series"][0]["total"] == 1
-    assert len(monthly["series"][0]["label"].split()) == 2  # "Nov 2026"
+    assert 1 <= len(monthly["series"]) <= 2, [row["bucket"] for row in monthly["series"]]
+    assert sum(row["total"] for row in monthly["series"]) == 1
+    assert all(len(row["label"].split()) == 2 for row in monthly["series"])  # "Nov 2026"
 
 
 async def test_the_range_is_reported_back_for_the_selector(client, use_fake_llm):

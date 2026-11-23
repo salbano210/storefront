@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_db
 from ..models import Conversation
 from ..orchestrator import DISPOSITIONS
+from ..services.seeder import LIVE_SOURCE, SAMPLE_SOURCE
 from .deps import is_admin, session_id
 
 router = APIRouter(prefix="/api", tags=["analytics"])
@@ -130,7 +131,14 @@ async def analytics(
 
     rows = list(await db.scalars(select(Conversation)))
     if scope == "session":
-        rows = [row for row in rows if row.session_id == sid]
+        # Sample history is demo data rather than one browser's property, so it is
+        # always included -- and counted separately in the response, so the UI can
+        # say how much of the picture it accounts for.
+        rows = [
+            row
+            for row in rows
+            if row.session_id == sid or (row.source or LIVE_SOURCE) == SAMPLE_SOURCE
+        ]
     # A conversation is dated by when it started, so chatting further never moves
     # it into a different day.
     in_range = [row for row in rows if start <= _as_utc(row.created_at).date() <= today]
@@ -146,6 +154,7 @@ async def analytics(
         per_bucket[bucket][row.intent or "unknown"] += 1
 
     total = len(in_range)
+    seeded = sum(1 for row in in_range if (row.source or LIVE_SOURCE) == SAMPLE_SOURCE)
     return {
         "scope": scope,
         "range": {
@@ -154,7 +163,7 @@ async def analytics(
             "days": days,
             "interval": interval,
         },
-        "totals": {"conversations": total},
+        "totals": {"conversations": total, "live": total - seeded, "seeded": seeded},
         "by_intent": _tally(intents, intent_order, "intent", total),
         "by_disposition": _tally(dispositions, DISPOSITIONS, "disposition", total),
         "by_outcome": sorted(

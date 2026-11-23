@@ -42,6 +42,7 @@ CONFIG_RESET = "config_reset"
 CREATOR_UPDATED = "creator_updated"
 CREATOR_RESET = "creator_reset"
 INJECTION_SUSPECTED = "injection_suspected"
+SAMPLE_HISTORY_GENERATED = "sample_history_generated"
 SESSION_STARTED = "session_started"
 
 ALL_EVENT_TYPES = (
@@ -69,6 +70,7 @@ ALL_EVENT_TYPES = (
     CREATOR_UPDATED,
     CREATOR_RESET,
     INJECTION_SUSPECTED,
+    SAMPLE_HISTORY_GENERATED,
     SESSION_STARTED,
 )
 
