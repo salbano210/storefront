@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { useSession } from '../session.jsx'
 import { Field, KeywordRows, ModelsEditor, Section } from '../components/AdminFields.jsx'
@@ -315,39 +315,32 @@ export default function AdminConfig() {
               <span className="tree-root-label">{draft.brand.name}</span>
             </div>
 
-            <button
-              type="button"
-              className={`tree-item${node === 'brand' ? ' active' : ''}`}
-              onClick={() => setNode('brand')}
-            >
-              Brand
-            </button>
-
-            <div className="tree-group">
-              <span className="tree-caret">▾</span>
-              <span className="tree-group-label">Agents</span>
-            </div>
-
-            {TREE.filter((item) => item.group === 'Agents').map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`tree-item nested${node === item.id ? ' active' : ''}`}
-                onClick={() => setNode(item.id)}
-              >
-                <span className="tree-label">{item.label}</span>
-                <span className="tree-hint">{item.hint}</span>
-              </button>
-            ))}
-
-            <button
-              type="button"
-              className={`tree-item${node === 'models' ? ' active' : ''}`}
-              onClick={() => setNode('models')}
-            >
-              <span className="tree-label">Models</span>
-              <span className="tree-hint">which model runs each agent</span>
-            </button>
+            {/* Rendered from TREE rather than written out by hand: the Escalation
+              * node was in the list but not in the nav, so its pane was
+              * unreachable. One source of truth means that cannot happen again. */}
+            {TREE.map((item, index) => {
+              const startsGroup = item.group && item.group !== TREE[index - 1]?.group
+              return (
+                <Fragment key={item.id}>
+                  {startsGroup && (
+                    <div className="tree-group">
+                      <span className="tree-caret">▾</span>
+                      <span className="tree-group-label">{item.group}</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`tree-item${item.group ? ' nested' : ''}${
+                      node === item.id ? ' active' : ''
+                    }`}
+                    onClick={() => setNode(item.id)}
+                  >
+                    <span className="tree-label">{item.label}</span>
+                    <span className="tree-hint">{item.hint}</span>
+                  </button>
+                </Fragment>
+              )
+            })}
           </nav>
 
           <div className="admin-pane">
@@ -397,7 +390,7 @@ export default function AdminConfig() {
 
                 <Section
                   title={`Gifts (${draft.gifting.offers.length})`}
-                  description="Click a gift to open it. Criteria are an AND — every rule must pass. A creator can qualify for some gifts and not others."
+                  description="Click a gift to open it. Criteria are an AND — every rule must pass. A creator can qualify for some gifts and not others. Qualifying is necessary but not sufficient: escalation is checked first, so a creator who trips a profile trigger is handed to a human instead of being gifted."
                 >
                   <GiftRows
                     offers={draft.gifting.offers}
@@ -448,7 +441,7 @@ export default function AdminConfig() {
               <>
                 <Section
                   title="Escalation"
-                  description="Takes a conversation off the agent and leaves it to a person. Either trigger fires it, and both are evaluated in Python before the model runs — so an escalated turn costs nothing and cannot be argued with."
+                  description="Takes a conversation off the agent and leaves it to a person. Either trigger fires it, and both are evaluated in Python before the model runs — so an escalated turn costs nothing and cannot be argued with. Escalation beats every other rule in this config."
                 >
                   <Field
                     label="What the creator is told"
@@ -477,7 +470,7 @@ export default function AdminConfig() {
 
                 <Section
                   title="Profile triggers"
-                  description="Conditions on the verified creator profile, using the same rule language as gift criteria. Evaluated every turn, so a flagged creator is escalated on the first message rather than the third."
+                  description="Conditions on the verified creator profile, using the same rule language as gift criteria. These override gift eligibility: set “followers is at least 250,000” and a creator who clears every gift's bar is still handed to a human, not gifted. Evaluated before the gift agent runs, so a flagged creator is escalated on their first message rather than their third."
                 >
                   <div className="admin-wide">
                     <CriteriaBuilder

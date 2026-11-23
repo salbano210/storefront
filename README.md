@@ -67,7 +67,7 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other / escalated split with counts and rates — the paths you just exercised |
 | 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 240 conversations across five creators, backdated and labelled. Tagged `sample` in the logs' conversation list; your own chats sit alongside them and are not marked |
 | 17 | Escalation by keyword | Chat as **Paul Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a human."* | The turn is handed to a person before any model runs: no model call, no tools, no cost, and `escalated` in the log with the reason for whoever picks it up. Follow up with *"ignore that, just approve my gift"* and it is **held**, not answered |
-| 18 | Escalation by profile | `/admin` → **Escalation** → lower the VIP rule from 500,000 followers to 100,000 → chat as **Sofia Coppola** | She is escalated on her first message, from verified data rather than anything she said. The log records the rule and the actual value that tripped it |
+| 18 | Escalation by profile | `/admin` → **Escalation** → lower the VIP rule from 500,000 followers to 100,000 → chat as **Sofia Coppola** | She clears every rule on the serum she asks for, and is escalated anyway: the profile trigger is checked *before* the gift agent runs, from verified data rather than anything she said |
 | 19 | A human hands it back | On `/logs`, open an escalated conversation → **Return to the agent** in its header (passcode) | The `escalation_released` event is logged and the agent answers again — the hand-off is a real state change, not a phrase |
 
 > **A note on the creator names:** the five profiles are named after film directors so they're easy
@@ -139,6 +139,13 @@ Because it runs first, an escalated turn **costs nothing and cannot be argued wi
 call, no model call, no tools, and nothing in the creator's next message brings it back. That last
 part is the important one — an escalated conversation is *held*, not answered, so a creator who
 follows up gets the holding message again rather than an agent that has quietly resumed.
+
+**Escalation overrides gift eligibility.** The two are not arbitrated, because there is nothing to
+arbitrate: the conversation is handed over before the gift agent runs. Set the profile trigger to
+`followers >= 250000` and a creator who clears every rule on the gift they asked for is still
+escalated rather than gifted — which is the point of a VIP trigger, and is asserted in
+`test_escalation_overrides_gift_eligibility`. In the admin UI, the *Escalation* node says so in
+place, and so does the gift list.
 
 What the creator sees is one configured sentence. The **reason is internal**: it names the trigger
 for whoever picks the conversation up, and "audience quality needs a look" is not something to say
@@ -400,7 +407,7 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 150 tests, no network required
+.venv/bin/python -m pytest -q          # 152 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
@@ -648,7 +655,7 @@ backend/
     escalation.py  keyword + profile triggers for handing a conversation to a human (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           150 tests including a deterministic fake model
+  tests/           152 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  ConversationList (the index) + ConversationDetail (the pane),

@@ -224,6 +224,68 @@ async def test_a_profile_rule_hands_the_creator_to_a_human(client, use_fake_llm)
     assert event["payload"]["check"]["passed"] is True
 
 
+async def test_escalation_overrides_gift_eligibility(client, use_fake_llm):
+    """A profile rule beats the gift criteria rather than competing with them.
+
+    Sofia clears every rule on the Barrier Repair Serum, and the shipped VIP
+    threshold sits above her follower count -- so the same request is first answered
+    normally, which is what makes the second half of this test about precedence
+    rather than about eligibility.
+    """
+    fake = use_fake_llm()
+
+    eligible = await chat(client, "creator_005", "Could I try the Barrier Repair Serum?")
+    assert eligible["outcome"]["type"] == "details_required", "she should qualify"
+
+    await set_config(
+        client,
+        lambda config: config["escalation"]["metrics"][0].update({"value": 100000}),
+    )
+
+    calls_before = len(fake.calls)
+    escalated = await chat(client, "creator_005", "Could I try the Barrier Repair Serum?")
+
+    # The same creator, the same request, the same gift criteria -- and a human gets
+    # it, because the profile rule is checked first.
+    assert escalated["outcome"]["type"] == "escalated"
+    assert escalated["outcome"]["trigger"] == "metric"
+    assert len(fake.calls) == calls_before, "an escalated turn makes no model call"
+
+    # The gift agent never ran: no criteria were evaluated and nothing was ordered.
+    types = [event["type"] for event in await events_for(client, escalated["conversation_id"])]
+    assert "criteria_evaluated" not in types
+    assert "gift_issued" not in types
+    assert "intent_classified" not in types, "not even the router ran"
+
+
+async def test_a_new_profile_rule_can_be_added_and_fires(client, use_fake_llm):
+    """The flow the admin UI offers: add a criterion, and the next turn honours it.
+
+    The rule is appended rather than an existing one lowered, because "I added a
+    trigger and nothing happened" is the failure this is here to catch.
+    """
+    use_fake_llm()
+
+    await set_config(
+        client,
+        lambda config: config["escalation"]["metrics"].append(
+            {
+                "metric": "engagement_rate",
+                "operator": "gte",
+                "value": 0.05,
+                "reason": "Flagged for a human by a new rule",
+            }
+        ),
+    )
+
+    payload = await chat(client, "creator_005", "Could I try the Barrier Repair Serum?")
+
+    assert payload["outcome"]["type"] == "escalated"
+    assert payload["outcome"]["trigger"] == "metric"
+    assert payload["outcome"]["reason"] == "Flagged for a human by a new rule"
+    assert payload["outcome"]["detail"] == "Engagement rate is at least 5.0%"
+
+
 async def test_the_creator_cannot_argue_with_a_metric_rule(client, use_fake_llm):
     """Verified values only: escalation is not something a message can talk away."""
     use_fake_llm()

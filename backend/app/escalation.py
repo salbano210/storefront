@@ -13,6 +13,12 @@ nothing, calls no tools, and nothing in the creator's message can talk it out of
 escalating. The model has no escalation tool, and a reply that claims otherwise is
 caught by the guardrails.
 
+Because it runs first, it also **overrides gift eligibility**. A creator who clears
+every rule on the gift they asked for is still handed to a human if they trip a
+trigger here -- escalation is the more specific instruction, and the two are not
+arbitrated, because there is nothing to arbitrate: the conversation never reaches
+the gift agent.
+
 Reasons are internal. They name the trigger for whoever picks the conversation up
 and are never quoted back to the creator -- a keyword like "audience quality needs
 a look" is not something to say to the person it is about.

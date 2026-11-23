@@ -155,7 +155,9 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
    criteria.
 9. Show the **profile** side of escalation: `/admin` → **Escalation** → lower the VIP rule from
    500,000 followers to 100,000 → chat as **Sofia Coppola** → she is handed to a person on her first
-   message, from verified data rather than anything she said.
+   message, from verified data rather than anything she said. She clears every rule on the serum she
+   is asking for, so this is also the precedence demo: escalation is checked before the gift agent
+   runs, and a creator who qualifies for the gift is still escalated rather than gifted.
 
 ---
 

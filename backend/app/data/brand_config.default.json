@@ -7,7 +7,7 @@
     "tone": "warm, concise, professional, never pushy"
   },
   "gifting": {
-    "notes": "Each gift carries its own criteria. There is no brand-level gate: a creator can qualify for some offers and not others, and the agents suggest the best one they do qualify for.",
+    "notes": "Each gift carries its own criteria. There is no brand-level gate: a creator can qualify for some offers and not others, and the agents suggest the best one they do qualify for. Qualifying is necessary but not sufficient -- escalation is checked first, so a creator who trips a profile trigger is handed to a human instead of being gifted.",
     "offers": [
       {
         "id": "barrier-repair-serum",
@@ -52,7 +52,7 @@
     ]
   },
   "escalation": {
-    "notes": "Escalation takes a conversation off the agent and leaves it to a person. Either trigger fires it, and it is evaluated in Python before the model runs, so an escalated turn costs nothing and cannot be talked out of. Reasons are internal -- they name the trigger for whoever picks it up, and are never quoted back to the creator.",
+    "notes": "Escalation takes a conversation off the agent and leaves it to a person. Either trigger fires it, and it is evaluated in Python before the model runs, so an escalated turn costs nothing and cannot be talked out of. It also overrides every other rule in this config: a creator who qualifies for a gift and trips a profile rule below is escalated, not gifted. Reasons are internal -- they name the trigger for whoever picks it up, and are never quoted back to the creator.",
     "reply": "Thanks for flagging that — I'm passing this conversation to a member of the team, who will pick it up from here. You don't need to do anything else.",
     "keywords": [
       { "phrase": "speak to a human", "reason": "Creator asked for a person" },
