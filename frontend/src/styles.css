@@ -1434,6 +1434,36 @@ textarea {
   grid-template-columns: max-content 1fr max-content 1fr;
 }
 
+/* --- what happened, in words --------------------------------------------- */
+/* The expanded row: Action / Input / Output, then the criteria, then the raw event. */
+.story-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.story-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.story-raw summary {
+  padding: 3px 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.story-raw summary:hover {
+  color: var(--ink-soft);
+}
+
+.story-raw .log-json {
+  margin-top: 6px;
+}
+
 .detail-note {
   margin: 10px 0 4px;
   font-size: 13px;

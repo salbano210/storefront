@@ -1,13 +1,16 @@
 import { formatters } from '../api'
 import { CriteriaTable } from './CriteriaTable.jsx'
 import { Facts } from './ui.jsx'
+import { eventStory } from './logModel.js'
 
 /* ---------------------------------------------------------------------------
- * The body of an expanded log row: the fields that did not fit in a column,
- * then the payload exactly as the agent recorded it.
+ * The body of an expanded log row: what the step was asked, what came back, and the
+ * criteria it was judged against -- in that order, in words.
  *
- * The JSON is not hidden behind a second toggle. An expanded row is already the
- * request for detail, and the payload is the evidence.
+ * The raw event sits in one disclosure below. It is there for when the summary is not
+ * enough, not as the first thing to read: the point of this pane is that somebody who
+ * has never seen a JSON payload can follow the conversation and find the step that
+ * went wrong.
  * ------------------------------------------------------------------------- */
 
 /** The criteria a payload carries, wherever in the payload they sit. */
@@ -18,43 +21,51 @@ function checksOf(payload) {
   return []
 }
 
+/** One muted line rather than a dozen labelled rows: the facts worth scanning. */
+function metaLine(event) {
+  const tokens = (event.tokens_in || 0) + (event.tokens_out || 0)
+  return [
+    `#${event.id}`,
+    formatters.dateTime(event.created_at),
+    event.agent,
+    event.status,
+    event.model,
+    event.latency_ms == null ? null : `${event.latency_ms} ms`,
+    tokens ? `${tokens.toLocaleString()} tokens` : null,
+    event.cost_usd ? formatters.cost(event.cost_usd) : null,
+    event.config_version == null ? null : `config v${event.config_version}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 export default function EventDetail({ row }) {
   const event = row.event
+  const story = eventStory(event)
   const payload = event.payload || {}
-  const tokens = (event.tokens_in || 0) + (event.tokens_out || 0)
   const checks = checksOf(payload)
 
   return (
     <div className="log-detail-body">
       <Facts
         rows={[
-          { label: 'Event', value: `#${event.id}`, mono: true },
-          { label: 'Time', value: formatters.dateTime(event.created_at), mono: true },
-          { label: 'Type', value: event.type, mono: true },
-          { label: 'Status', value: event.status },
-          { label: 'Agent', value: event.agent },
-          { label: 'Model', value: event.model, mono: true },
-          { label: 'Conversation', value: event.conversation_id, mono: true },
-          { label: 'Session', value: event.session_id, mono: true },
-          { label: 'Creator', value: event.creator_id, mono: true },
-          {
-            label: 'Config version',
-            value: event.config_version == null ? null : `v${event.config_version}`,
-            mono: true,
-          },
-          { label: 'Latency', value: event.latency_ms == null ? null : `${event.latency_ms} ms` },
-          {
-            label: 'Tokens',
-            value: tokens ? `${event.tokens_in || 0} in / ${event.tokens_out || 0} out` : null,
-          },
-          { label: 'Cost', value: formatters.cost(event.cost_usd) },
+          { label: 'Action', value: story.action },
+          { label: 'Input', value: story.input.join('  ·  '), mono: true },
+          { label: 'Output', value: story.output },
         ]}
       />
 
+      {story.note && <p className="story-note">{story.note}</p>}
+
       {checks.length > 0 && <CriteriaTable checks={checks} />}
 
+      <p className="story-meta mono">{metaLine(event)}</p>
+
       {event.payload ? (
-        <pre className="log-json">{JSON.stringify(payload, null, 2)}</pre>
+        <details className="story-raw">
+          <summary>Raw event</summary>
+          <pre className="log-json">{JSON.stringify(payload, null, 2)}</pre>
+        </details>
       ) : (
         <p className="muted small">No payload recorded for this event.</p>
       )}
