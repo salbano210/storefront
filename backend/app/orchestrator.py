@@ -308,6 +308,11 @@ async def _hold_escalated(
     The reply is the configured holding message. The *reason* is not quoted back:
     it exists for whoever picks the conversation up, and "audience quality needs a
     look" is not something to say to the person it is about.
+
+    The holding message is optional. With ``escalation.reply`` empty the creator is
+    told nothing at all, so no message is recorded -- an empty one would render as a
+    blank bubble in the chat. The turn still goes on the record, because a creator
+    talking into the void with no trace of it would be worse than an empty message.
     """
     intent = conversation.intent or ""
     reply = config.escalation.reply
@@ -321,15 +326,19 @@ async def _hold_escalated(
     else:
         outcome["already_escalated"] = True
 
-    await store.append_message(
-        db, conversation_id=conversation.id, role="agent", content=reply, agent="escalation"
-    )
+    if reply:
+        await store.append_message(
+            db, conversation_id=conversation.id, role="agent", content=reply, agent="escalation"
+        )
     await logger.log(
         events.MESSAGE_SENT,
         agent="escalation",
         summary=(
             "Holding reply sent -- outcome=escalated "
             f"({'already with a human' if already_escalated else 'handed off'})"
+            if reply
+            else "Held for a human -- nothing sent "
+            f"({'already with a human' if already_escalated else 'handed off'}, no holding reply configured)"
         ),
         payload={
             "reply": reply,

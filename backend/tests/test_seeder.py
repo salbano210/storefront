@@ -230,6 +230,10 @@ def test_start_times_cover_the_range_plus_the_rate_window_and_favour_recent_days
 
     assert starts == sorted(starts)
     assert max(starts).date() <= today
+    # Not merely the same day: nothing may be stamped ahead of the clock. A seeded
+    # conversation dated later today sorts above the demo's own traffic in a log
+    # ordered by time, which is indistinguishable from a broken sort.
+    assert max(starts) <= datetime.now(timezone.utc)
     assert min(starts).date() >= today - timedelta(days=29 + seeder.SPAN_LOOKBACK_DAYS)
     # Weighted towards today, but only mildly: the newest fortnight should be busier
     # than the oldest without starving it.

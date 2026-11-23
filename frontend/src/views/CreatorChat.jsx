@@ -213,16 +213,21 @@ export default function CreatorChat() {
             </div>
           )}
 
-          {messages.map((message, index) => (
-            <div key={`${index}-${message.role}`} className={`bubble-row ${message.role}`}>
-              <div className={`bubble ${message.role}`}>
-                {message.content}
-                {message.role === 'agent' && message.agent && (
-                  <span className="bubble-meta">{message.agent.replaceAll('_', ' ')}</span>
-                )}
+          {/* A reply can legitimately be empty -- escalation with no holding message
+            * configured is silence, not a blank bubble. Filtered here rather than at
+            * the two places messages enter state, so nothing can bypass it. */}
+          {messages
+            .filter((message) => message.content)
+            .map((message, index) => (
+              <div key={`${index}-${message.role}`} className={`bubble-row ${message.role}`}>
+                <div className={`bubble ${message.role}`}>
+                  {message.content}
+                  {message.role === 'agent' && message.agent && (
+                    <span className="bubble-meta">{message.agent.replaceAll('_', ' ')}</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
           {busy && (
             <div className="bubble-row agent">

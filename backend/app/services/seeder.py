@@ -162,8 +162,14 @@ def _start_times(rng: random.Random, count: int, days: int) -> list[datetime]:
     the rate line has nothing to average over. This ramps by about 2x from the start
     of the range to today, which reads as a channel picking up without hollowing out
     the first half of the chart.
+
+    Nothing lands in the future. Seeded conversations used to be stamped anywhere
+    between 08:00 and 20:00 on their day, so on a morning run several of "today's"
+    sat hours ahead of the clock -- and above the demo's own traffic in a log
+    ordered by time, which is indistinguishable from a broken sort.
     """
-    midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(timezone.utc)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     span = days + SPAN_LOOKBACK_DAYS
     offsets = list(range(span))
     weights = [span + (span - offset) for offset in offsets]  # ~1x at the start, 2x today
@@ -171,9 +177,14 @@ def _start_times(rng: random.Random, count: int, days: int) -> list[datetime]:
     starts = []
     for offset in picks:
         moment = midnight - timedelta(days=offset)
-        hour = rng.randint(8, 19)
-        minute = rng.randint(0, 59)
-        starts.append(moment + timedelta(hours=hour, minutes=minute))
+        business_hours = moment + timedelta(
+            hours=rng.randint(8, 19), minutes=rng.randint(0, 59)
+        )
+        starts.append(
+            min(business_hours, now - timedelta(minutes=rng.randint(1, 90)))
+            if offset == 0
+            else business_hours
+        )
     return sorted(starts)
 
 

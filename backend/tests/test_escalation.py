@@ -303,6 +303,38 @@ async def test_the_creator_cannot_argue_with_a_metric_rule(client, use_fake_llm)
     assert payload["outcome"]["trigger"] == "metric"
 
 
+async def test_an_empty_holding_reply_sends_nothing(client, use_fake_llm):
+    """The holding message is optional, and empty means silence.
+
+    Not a blank bubble in the chat and not an empty message row in the transcript --
+    but the turns are still on the record, because a creator talking into the void
+    with no trace of it would be worse than an empty message.
+    """
+    use_fake_llm()
+    await set_config(client, lambda config: config["escalation"].update({"reply": ""}))
+
+    first = await chat(client, "creator_001", "Please let me speak to a human.")
+    assert first["outcome"]["type"] == "escalated"
+    assert first["reply"] == ""
+
+    # Held turns stay silent too.
+    second = await chat(client, "creator_001", "Anyone there?", first["conversation_id"])
+    assert second["outcome"]["type"] == "escalated"
+    assert second["outcome"]["already_escalated"] is True
+    assert second["reply"] == ""
+
+    transcript = (await client.get(f"/api/conversations/{first['conversation_id']}")).json()
+    # Two creator messages and no agent messages: nothing was said back.
+    assert [message["role"] for message in transcript["messages"]] == ["creator", "creator"]
+    assert all(message["content"] for message in transcript["messages"])
+
+    events = await events_for(client, first["conversation_id"])
+    sent = [event for event in events if event["type"] == "message_sent"]
+    assert len(sent) == 2, "both turns have to be on the record"
+    assert all(event["payload"]["reply"] == "" for event in sent)
+    assert all("nothing sent" in event["summary"] for event in sent)
+
+
 async def test_a_keyword_rule_is_removable(client, use_fake_llm):
     use_fake_llm()
     await set_config(

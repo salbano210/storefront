@@ -133,6 +133,10 @@ export function conversationRows(conversations = []) {
 export function detailRows(events = []) {
   return events
     .filter((event) => DETAIL_EVENT_TYPES.has(event.type))
+    /* A message_sent with an empty reply is not a message: it is escalation with no
+     * holding text configured, which is silence. The turn is still in the event
+     * stream and the export; this pane shows what was actually said. */
+    .filter((event) => event.type !== 'message_sent' || (event.payload || {}).reply)
     .map((event) => {
       const payload = event.payload || {}
       const tool = payload.tool
@@ -166,13 +170,15 @@ export function detailRows(events = []) {
     })
 }
 
-/** The counts the detail header reports, from the events it loaded. */
+/** The counts the detail header reports, from the events it loaded.
+ *
+ * Counted off the rows the pane draws rather than off the event types, so the header
+ * cannot claim a message that was never said.
+ */
 export function conversationStats(events = []) {
-  const shown = events.filter((event) => DETAIL_EVENT_TYPES.has(event.type))
-  const messages = shown.filter(
-    (event) => event.type === 'message_received' || event.type === 'message_sent'
-  ).length
-  const toolCalls = shown.filter((event) => event.type.startsWith('tool_call')).length
+  const rows = detailRows(events)
+  const messages = rows.filter((row) => row.event.type.startsWith('message')).length
+  const toolCalls = rows.filter((row) => row.event.type.startsWith('tool_call')).length
   const tokens = events.reduce(
     (total, event) => total + (event.tokens_in || 0) + (event.tokens_out || 0),
     0

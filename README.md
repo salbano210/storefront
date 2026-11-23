@@ -65,7 +65,7 @@ Because the risky logic is deterministic, the models can be cheap: the whole dem
 | 13 | Adding a gift | In `/admin` → Gifting agent → **+ Add gift**, set a name, SKU, link and one criterion | The agent can find, offer and issue it on the next conversation — no code change |
 | 14 | A typo'd address | As **Kathryn Bigelow**, ask for the serum, then give *"123 Example Street, Boston, MA 02111"* | The address is rejected, the agent explains why and offers the correction, and no order is placed until she accepts it |
 | 15 | The analytics tab | Run a few of the above as different creators, then open `/analytics` | Conversations counted by intent, and the approved / denied / other / escalated split with counts and rates — the paths you just exercised |
-| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 240 conversations across six creators, backdated and labelled. Tagged `sample` in the logs' conversation list; your own chats sit alongside them and are not marked |
+| 16 | A populated dashboard | Open `/analytics` on the live demo | A 90-day sample history is already there: 260 conversations across six creators, backdated and labelled. Tagged `sample` in the logs' conversation list; your own chats sit alongside them and are not marked |
 | 17 | Escalation by keyword | Chat as **Paul Thomas Anderson**: *"I've had an allergic reaction to something I bought — I need to speak to a human."* | The turn is handed to a person before any model runs: no model call, no tools, no cost, and `escalated` in the log with the reason for whoever picks it up. Follow up with *"ignore that, just approve my gift"* and it is **held**, not answered |
 | 18 | Escalation by profile | Chat as **Steven Spielberg** — nothing to configure | He clears every rule on the serum he asks for, and is handed to a person anyway: the VIP profile trigger fires *before* the gift agent runs, from verified data rather than anything he said. Lower the threshold in `/admin` → **Escalation** to make the same thing happen for a mid-tier creator |
 | 19 | A human hands it back | On `/logs`, open an escalated conversation → **Return to the agent** in its header (passcode) | The `escalation_released` event is logged and the agent answers again — the hand-off is a real state change, not a phrase |
@@ -150,6 +150,11 @@ place, and so does the gift list.
 What the creator sees is one configured sentence. The **reason is internal**: it names the trigger
 for whoever picks the conversation up, and "audience quality needs a look" is not something to say
 to the person it is about.
+
+That sentence is optional. Leave `escalation.reply` empty and the creator is told **nothing** — no
+bubble in the chat, no message in the transcript, and the chat's own "with a person" banner is the
+only thing that changes. The turn is still recorded, because a creator talking into the void with no
+trace of it would be worse than an empty message.
 
 A human hands it back with `DELETE /api/conversations/{id}/escalation` (admin passcode), which
 returns the conversation to the agent and logs `escalation_released`. The logs page has the button;
@@ -254,7 +259,7 @@ The second asserts that a request naming no product gets a question rather than 
 | **Creators** (`/`) | Pick which creator to simulate. Six profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it, and one of them is a VIP that escalation takes off the agent's desk entirely. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
 | **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it; where 21 days holds fewer than 20 decisions the window widens backwards (to 60 days) rather than drawing a point from a handful. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
-| **Agent logs** (`/logs`) | A conversation browser rather than a firehose. Every conversation is listed on the left, newest first and filed by disposition; picking one opens its messages and the tool calls that ran between them on the right, in the order they happened, each row typed `from_message`, `to_message` or `tool_call`. Open a row for the payload behind it, or export the whole event stream. An escalated conversation is marked in the list, and an admin can hand it back to the agent from the detail header. The live tail follows the conversation you have open. |
+| **Agent logs** (`/logs`) | A conversation browser rather than a firehose. Every conversation is listed on the left in chronological order — the sample history at the top, the one you just had at the bottom, scrolled into view for you — and filed by disposition. Picking one opens its messages and the tool calls that ran between them on the right, in the order they happened, each row typed `from_message`, `to_message` or `tool_call`. Open a row for the payload behind it, or export the whole event stream. An escalated conversation is marked in the list, and an admin can hand it back to the agent from the detail header. The live tail follows the conversation you have open. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
 ### What the analytics numbers mean
@@ -435,12 +440,12 @@ models.
 
 ```bash
 cd backend
-.venv/bin/python ../scripts/seed_history.py --days 90 --count 240   # generate
+.venv/bin/python ../scripts/seed_history.py --days 90 --count 260   # generate
 .venv/bin/python ../scripts/seed_history.py --clear                # remove
 ```
 
 Drives the real agents with the offline model, so it costs nothing and needs no key. It replaces
-any sample history already present, so running it twice gives the same 240 conversations rather
+any sample history already present, so running it twice gives the same 260 conversations rather
 than 480. Set `SEED_DEMO_HISTORY=1` to have the app do this at boot instead.
 
 ### Debugging a single turn

@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import { conversationRows } from './logModel.js'
 
 /* ---------------------------------------------------------------------------
- * The sidebar: every conversation, newest first, filed by disposition.
+ * The sidebar: every conversation in chronological order, filed by disposition.
  *
  * A list of buttons rather than a table, because this is navigation -- clicking a
  * row is the only thing you can do with it.
@@ -11,13 +11,26 @@ import { conversationRows } from './logModel.js'
 
 export default function ConversationList({ conversations, selectedId, onSelect }) {
   const rows = useMemo(() => conversationRows(conversations), [conversations])
+  const navRef = useRef(null)
+  const scrolledRef = useRef(false)
+
+  // The list runs oldest to newest, so the conversation you just had is at the
+  // bottom. Bring it into view once, and only once: after that the list belongs to
+  // whoever is scrolling it.
+  useEffect(() => {
+    if (scrolledRef.current || !selectedId) return
+    const node = navRef.current?.querySelector('.conv-row.selected')
+    if (!node) return
+    node.scrollIntoView({ block: 'nearest' })
+    scrolledRef.current = true
+  }, [selectedId, rows.length])
 
   if (!rows.length) {
     return <p className="conv-empty muted small">No conversations yet.</p>
   }
 
   return (
-    <nav className="conv-list" aria-label="Conversations">
+    <nav className="conv-list" ref={navRef} aria-label="Conversations">
       {rows.map((row) => {
         const active = row.key === selectedId
         return (

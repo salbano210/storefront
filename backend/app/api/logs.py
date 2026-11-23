@@ -63,13 +63,17 @@ async def _distinct(db: AsyncSession, column) -> list[str]:
 async def logs_meta(db: AsyncSession = Depends(get_db)) -> dict:
     """The conversation index the logs page is built on, plus the filter vocabularies.
 
+    Oldest first, so the sidebar reads as a log: the sample history at the top, the
+    conversation you just had at the bottom. The page scrolls that one into view on
+    arrival, so chronological order costs nothing.
+
     Aggregates rather than loading the event table: the page polls this while it is
     live, and reading every event to count them is not something to do every couple of
     seconds. The creator names come from one query for the same reason -- asking per
     conversation is 240 queries on a page that has 240 conversations in it.
     """
     conversations = list(
-        await db.scalars(select(Conversation).order_by(Conversation.created_at.desc()))
+        await db.scalars(select(Conversation).order_by(Conversation.created_at.asc()))
     )
     names = {profile.id: profile.name for profile in await data_store.list_profiles(db)}
     return {
