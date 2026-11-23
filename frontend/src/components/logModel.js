@@ -26,8 +26,20 @@ export const DETAIL_EVENT_TYPES = new Set([
   'tool_call_failed',
 ])
 
+/* The record kind, as the log names it: a message in, a message out, or a tool call.
+ * The raw event type is still in the payload and the export -- this is the
+ * vocabulary a reader scans the pane by, so it stays short and it stays stable even
+ * if the event names change. */
+export const DETAIL_KINDS = {
+  message_received: 'from_message',
+  message_sent: 'to_message',
+  tool_call_completed: 'tool_call',
+  tool_call_failed: 'tool_call',
+}
+
 export const DETAIL_COLUMNS = [
   { key: 'time', label: 'Time', mono: true },
+  { key: 'type', label: 'Type', mono: true },
   { key: 'step', label: 'Step', mono: true },
   { key: 'detail', label: 'Detail', wide: true },
 ]
@@ -144,6 +156,7 @@ export function detailRows(events = []) {
         tone: event.status === 'ok' ? null : event.status === 'blocked' ? 'red' : 'amber',
         cells: {
           time: formatters.time(event.created_at),
+          type: DETAIL_KINDS[event.type] || event.type,
           step,
           detail: message
             ? sentence
