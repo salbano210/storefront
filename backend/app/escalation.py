@@ -1,23 +1,29 @@
 """Escalation: taking a conversation off the agent and leaving it to a person.
 
-Two kinds of trigger, both configured by the admin and both evaluated in Python:
+Three kinds of trigger:
 
 * **keyword** rules match the creator's own words, so "I need to speak to a human"
   or a safety complaint reaches a person without the model being involved;
 * **metric** rules match the verified creator profile, so an audience-quality flag
-  or a VIP account is handled by a human rather than decided by an agent.
+  or a VIP account is handled by a human rather than decided by an agent;
+* **out of scope**: the router decided the message is not a request the gifting
+  agent handles. Nothing else answers it, so it goes to a person too.
 
-The check runs *before* the router and before any model call. That is what makes it
-a real hand-off rather than something the agent says: an escalated turn costs
-nothing, calls no tools, and nothing in the creator's message can talk it out of
-escalating. The model has no escalation tool, and a reply that claims otherwise is
-caught by the guardrails.
+The keyword and metric checks run *before* the router and before any model call. That
+is what makes them a real hand-off rather than something the agent says: an escalated
+turn costs nothing, calls no tools, and nothing in the creator's message can talk it
+out of escalating. The model has no escalation tool, and a reply that claims otherwise
+is caught by the guardrails.
 
-Because it runs first, it also **overrides gift eligibility**. A creator who clears
-every rule on the gift they asked for is still handed to a human if they trip a
-trigger here -- escalation is the more specific instruction, and the two are not
-arbitrated, because there is nothing to arbitrate: the conversation never reaches
-the gift agent.
+The scope check necessarily runs *after* the router -- you need the classification to
+know the request is out of scope -- but the decision is still Python's: the model
+classifies, it does not choose. An out-of-scope turn never reaches an agent either.
+
+Because the configured checks run first, they also **override gift eligibility**. A
+creator who clears every rule on the gift they asked for is still handed to a human if
+they trip a trigger here -- escalation is the more specific instruction, and the two
+are not arbitrated, because there is nothing to arbitrate: the conversation never
+reaches the gift agent.
 
 Reasons are internal. They name the trigger for whoever picks the conversation up
 and are never quoted back to the creator -- a keyword like "audience quality needs
@@ -38,7 +44,7 @@ from .schemas import BrandConfig, CreatorProfile
 class Escalation:
     """Why a conversation is being handed to a human."""
 
-    kind: str  # "keyword" | "metric"
+    kind: str  # "keyword" | "metric" | "out_of_scope"
     reason: str
     detail: str
     check: dict[str, Any] | None = field(default=None)
@@ -110,3 +116,18 @@ def evaluate(
     for a person, that is the reason worth recording, whatever their profile says.
     """
     return keyword_escalation(message, config) or metric_escalation(profile, config)
+
+
+def out_of_scope(intent: str, reasoning: str = "") -> Escalation:
+    """The router decided this is not a request we have an agent for.
+
+    There is no general-purpose agent to fall back on, so "we have no agent for
+    this" means a person, not a model improvising. The classification is the
+    model's; the hand-off is this function's.
+    """
+    return Escalation(
+        kind="out_of_scope",
+        reason="The request is outside what the gifting agent handles",
+        detail=f"intent={intent}",
+        check={"intent": intent, "reasoning": reasoning} if reasoning else {"intent": intent},
+    )

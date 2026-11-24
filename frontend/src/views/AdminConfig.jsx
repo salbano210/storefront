@@ -16,7 +16,6 @@ const TREE = [
   { id: 'brand', label: 'Brand', hint: 'name, positioning, tone' },
   { id: 'gifting', label: 'Gifting agent', group: 'Agents', hint: 'gifts and their criteria' },
   { id: 'router', label: 'Intent agent', group: 'Agents', hint: 'do we have an agent for this?' },
-  { id: 'general_inquiry', label: 'Front desk', group: 'Agents', hint: 'everything else' },
   { id: 'escalation', label: 'Escalation', hint: 'when a human takes over' },
   { id: 'models', label: 'Models', hint: 'which model runs each agent' },
 ]
@@ -414,23 +413,10 @@ export default function AdminConfig() {
             {node === 'router' && (
               <Section
                 title="Intent agent"
-                description="Decides whether the creator's message is an intent we have an agent for. It never approves anything itself."
+                description="Decides whether the creator's message is an intent we have an agent for. It never approves anything itself, and it cannot escalate — anything it classifies as out of scope is handed to a person by the system, not by the model."
               >
                 <AgentFields
                   agentKey="router"
-                  agents={draft.agents}
-                  onChange={(value) => update(['agents'], value)}
-                />
-              </Section>
-            )}
-
-            {node === 'general_inquiry' && (
-              <Section
-                title="Front desk"
-                description="Everything we have no specialist agent for, including partnership pitches. It has no business tools at all."
-              >
-                <AgentFields
-                  agentKey="general_inquiry"
                   agents={draft.agents}
                   onChange={(value) => update(['agents'], value)}
                 />
@@ -441,7 +427,7 @@ export default function AdminConfig() {
               <>
                 <Section
                   title="Escalation"
-                  description="Takes a conversation off the agent and leaves it to a person. Either trigger fires it, and both are evaluated in Python before the model runs — so an escalated turn costs nothing and cannot be argued with. Escalation beats every other rule in this config."
+                  description="Takes a conversation off the agent and leaves it to a person. Three things fire it: a keyword rule, a profile rule, and any request the intent agent classifies as out of scope — nothing answers those. The keyword and profile rules are evaluated in Python before the model runs, so those turns cost nothing and cannot be argued with. Escalation beats every other rule in this config."
                 >
                   <Field
                     label="What the creator is told"

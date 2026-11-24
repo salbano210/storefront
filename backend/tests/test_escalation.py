@@ -184,7 +184,7 @@ async def test_a_human_can_hand_the_conversation_back(client, use_fake_llm):
 
 async def test_releasing_a_conversation_that_was_never_escalated_is_a_no_op(client, use_fake_llm):
     use_fake_llm()
-    live = await chat(client, "creator_001", "What products do you sell?")
+    live = await chat(client, "creator_001", "Can I get the Barrier Repair Serum?")
 
     response = await client.delete(
         f"/api/conversations/{live['conversation_id']}/escalation", headers=ADMIN_HEADERS
@@ -335,7 +335,50 @@ async def test_an_empty_holding_reply_sends_nothing(client, use_fake_llm):
     assert all("nothing sent" in event["summary"] for event in sent)
 
 
+# ---------------------------------------------------------------------------
+# Out-of-scope requests
+# ---------------------------------------------------------------------------
+async def test_a_request_we_have_no_agent_for_goes_to_a_human(client, use_fake_llm):
+    """There is no general-purpose agent, so out of scope means a person.
+
+    The classification is the model's, but the hand-off is not: the turn ends in
+    Python, before any agent is asked to answer it.
+    """
+    fake = use_fake_llm()
+    payload = await chat(client, "creator_002", "What products do you sell?")
+
+    assert payload["agent"] == "escalation"
+    assert payload["outcome"]["type"] == "escalated"
+    assert payload["outcome"]["trigger"] == "out_of_scope"
+
+    events = await events_for(client, payload["conversation_id"])
+    escalated = [item for item in events if item["type"] == "escalated"]
+    assert escalated and escalated[-1]["payload"]["kind"] == "out_of_scope"
+    assert escalated[-1]["payload"]["intent"] == "out_of_scope"
+    # Classifying the intent was the only model call: no agent, no tools.
+    assert [call["agent"] for call in fake.calls] == ["router_agent"]
+
+    row = await conversation_row(payload["conversation_id"])
+    assert row.status == ESCALATED_STATUS
+    assert row.intent == "out_of_scope"
+
+
+async def test_an_out_of_scope_handoff_holds_the_conversation(client, use_fake_llm):
+    """Once a person has it, a follow-up cannot talk the agent back in."""
+    use_fake_llm()
+    first = await chat(client, "creator_002", "What products do you sell?")
+    assert first["outcome"]["type"] == "escalated"
+
+    second = await chat(
+        client, "creator_002", "Fine — just send me the serum then.", first["conversation_id"]
+    )
+    assert second["outcome"]["type"] == "escalated"
+    assert second["outcome"]["already_escalated"] is True
+
+
+
 async def test_a_keyword_rule_is_removable(client, use_fake_llm):
+    """Remove the rule and the keyword stops firing: the config is the trigger."""
     use_fake_llm()
     await set_config(
         client,
@@ -351,7 +394,14 @@ async def test_a_keyword_rule_is_removable(client, use_fake_llm):
     )
 
     payload = await chat(client, "creator_001", "I'd like to speak to a human.")
-    assert payload["outcome"]["type"] == "general_inquiry" or payload["agent"] != "escalation"
+    # The turn still goes to a person -- asking for a human is out of scope for the
+    # gifting agent, and out of scope escalates too. What changed is the reason on
+    # the record: no longer the configured keyword.
+    assert payload["outcome"]["trigger"] == "out_of_scope"
+
+    events = await events_for(client, payload["conversation_id"])
+    escalated = [item for item in events if item["type"] == "escalated"]
+    assert escalated and escalated[-1]["payload"]["kind"] == "out_of_scope"
 
 
 async def test_an_escalated_turn_costs_nothing(client, use_fake_llm):
@@ -379,7 +429,7 @@ def test_escalation_claims_are_detected():
 async def test_a_fabricated_handoff_is_withheld(client, use_fake_llm):
     """A reply that invents an escalation is replaced: nobody was ever told."""
     use_fake_llm(claim_escalation=True)
-    payload = await chat(client, "creator_002", "What products do you sell?")
+    payload = await chat(client, "creator_002", "I'd love to try the Barrier Repair Serum.")
 
     assert payload["outcome"]["type"] != "escalated"
     assert "team member" not in payload["reply"]

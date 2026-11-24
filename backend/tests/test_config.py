@@ -10,6 +10,7 @@ from conftest import ADMIN_HEADERS
 
 from app.db import AsyncSessionLocal
 from app.models import ConfigVersion
+from app.schemas import CONFIG_SCHEMA_VERSION
 from app.services import config_manager
 
 pytestmark = pytest.mark.asyncio
@@ -166,3 +167,25 @@ async def test_stored_config_that_no_longer_validates_is_reseeded():
         version_again, config_again = await config_manager.get_current(db)
         assert version_again == version
         assert config_again.brand.name == "Summer Soft Skincare"
+
+
+async def test_a_config_from_an_older_schema_version_is_reseeded():
+    """A stored config that still parses, but predates what this build ships.
+
+    Added blocks are the case: the old config validates, so nothing fails loudly --
+    it would simply never gain the new rules. Reseeding is the honest option, since
+    a stored config is a copy of the defaults plus admin edits and there is no way
+    to tell which edits matter.
+    """
+    payload = json.loads(config_manager.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+    payload["schema_version"] = CONFIG_SCHEMA_VERSION - 1
+    async with AsyncSessionLocal() as db:
+        db.add(
+            ConfigVersion(config_json=json.dumps(payload), updated_by="older-schema")
+        )
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        version, config = await config_manager.ensure_seeded(db)
+        assert config.schema_version == CONFIG_SCHEMA_VERSION
+        assert version > 1

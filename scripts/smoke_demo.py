@@ -148,13 +148,18 @@ async def main() -> int:
         total_cost += result["usage"].get("cost_usd") or 0
         evts = await events(client, result["conversation_id"])
         check(
-            "routed as general_inquiry",
-            result["intent"] == "general_inquiry",
+            "routed as out_of_scope",
+            result["intent"] == "out_of_scope",
             result["intent"],
         )
-        check("front desk answered", result["agent"] == "general_handler", result["agent"])
+        check("handed to a person", result["agent"] == "escalation", result["agent"])
         check(
-            "no gifting tool ran",
+            "escalated rather than answered",
+            result["outcome"].get("type") == "escalated",
+            result["outcome"].get("type"),
+        )
+        check(
+            "no agent ran and no gifting tool ran",
             "criteria_evaluated" not in types(evts) and "gift_issued" not in types(evts),
         )
         print(f"  reply: {result['reply'][:220]}\n")

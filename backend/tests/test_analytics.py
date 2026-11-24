@@ -72,9 +72,10 @@ async def test_conversations_are_counted_by_intent(client, use_fake_llm):
 
     assert data["totals"]["conversations"] == 3
     assert intents["gift_request"]["count"] == 2
-    assert intents["general_inquiry"]["count"] == 1
+    assert intents["out_of_scope"]["count"] == 1
     # The dashboard reads its names off the payload, not off hard-coded strings.
     assert intents["gift_request"]["label"] == "Gift request"
+    assert intents["out_of_scope"]["label"] == "Out of scope"
 
 
 async def test_intent_rates_are_shares_of_the_total(client, use_fake_llm):
@@ -87,7 +88,7 @@ async def test_intent_rates_are_shares_of_the_total(client, use_fake_llm):
     intents = by_key(data["by_intent"], "intent")
 
     assert intents["gift_request"]["rate"] == pytest.approx(1 / 3, abs=1e-4)
-    assert intents["general_inquiry"]["rate"] == pytest.approx(2 / 3, abs=1e-4)
+    assert intents["out_of_scope"]["rate"] == pytest.approx(2 / 3, abs=1e-4)
     assert sum(row["rate"] for row in data["by_intent"]) == pytest.approx(1.0, abs=1e-4)
 
 
@@ -145,7 +146,9 @@ async def test_dispositions_count_approvals_denials_and_other(client, use_fake_l
     # creator_004 does not meet the serum's criteria.
     denied = await chat(client, "creator_004", "Can I get the Barrier Repair Serum?")
     assert denied["outcome"]["type"] == "gift_declined"
-    await chat(client, "creator_002", "What products do you sell?")
+    # Eligible, but nothing was ordered, so it is neither approved nor denied.
+    pending = await chat(client, "creator_001", "I'd love the Barrier Repair Serum")
+    assert pending["outcome"]["type"] == "details_required"
 
     data = await analytics(client)
     dispositions = by_key(data["by_disposition"], "disposition")
@@ -160,7 +163,7 @@ async def test_dispositions_count_approvals_denials_and_other(client, use_fake_l
 async def test_every_disposition_is_reported_even_at_zero(client, use_fake_llm):
     """The dashboard shows a 0% row rather than silently dropping a bucket."""
     use_fake_llm()
-    await chat(client, "creator_002", "What products do you sell?")
+    await chat(client, "creator_001", "I'd love the Barrier Repair Serum")
 
     data = await analytics(client)
     dispositions = by_key(data["by_disposition"], "disposition")
@@ -181,7 +184,9 @@ async def test_every_disposition_is_reported_even_at_zero(client, use_fake_llm):
 async def test_the_other_bucket_is_broken_down_by_outcome(client, use_fake_llm):
     """'Other' is a bucket, not a black box: the raw outcome is reported too."""
     use_fake_llm()
-    await chat(client, "creator_002", "What products do you sell?")
+    # Out of scope, so no agent ran: it lands on the escalated bucket instead.
+    escalated = await chat(client, "creator_002", "What products do you sell?")
+    assert escalated["outcome"]["type"] == "escalated"
     # Qualifies, but the address has not been settled, so nothing was ordered.
     pending = await chat(client, "creator_001", "I'd love the Barrier Repair Serum")
     assert pending["outcome"]["type"] == "details_required"
@@ -189,9 +194,10 @@ async def test_the_other_bucket_is_broken_down_by_outcome(client, use_fake_llm):
     data = await analytics(client)
     outcomes = by_key(data["by_outcome"], "outcome")
 
-    assert outcomes["inquiry"]["count"] == 1
     assert outcomes["details_required"]["count"] == 1
     assert outcomes["details_required"]["label"] == "Awaiting details"
+    assert outcomes["escalated"]["count"] == 1
+    assert outcomes["escalated"]["label"] == "Escalated to a human"
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +273,9 @@ async def test_the_series_carries_dispositions_and_the_approval_rate(client, use
     await approve_a_gift(client, "creator_001")
     denied = await chat(client, "creator_004", "Can I get the Barrier Repair Serum?")
     assert denied["outcome"]["type"] == "gift_declined"
-    await chat(client, "creator_002", "What products do you sell?")
+    # Eligible but nothing ordered, so it is neither approved nor denied.
+    pending = await chat(client, "creator_001", "I'd love the Barrier Repair Serum")
+    assert pending["outcome"]["type"] == "details_required"
 
     data = await analytics(client, days=7, interval="day")
     today = data["series"][-1]

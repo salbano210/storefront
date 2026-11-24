@@ -1,7 +1,8 @@
 """Intent agent: decide whether a message is an intent we have an agent for.
 
-There is exactly one specialist -- the gifting agent. Everything else is routed
-to the front desk, which is a responder rather than a specialist.
+There is exactly one specialist -- the gifting agent. Anything else is **out of
+scope**, and an out-of-scope request leaves the agent rather than being improvised
+at: the brand would rather a person answer it than have a model guess.
 """
 
 from __future__ import annotations
@@ -13,10 +14,9 @@ from ..schemas import BrandConfig, CreatorProfile
 from ..services.llm_client import LLMClient
 from . import prompts
 
-AGENT_FOR_INTENT = {
-    "gift_request": "gift_request_agent",
-    "general_inquiry": "general_handler",
-}
+# The vocabulary the router chooses from. Only one of them has an agent.
+INTENTS = ("gift_request", "out_of_scope")
+AGENT_FOR_INTENT = {"gift_request": "gift_request_agent"}
 
 _GIFT_PATTERNS = (
     r"\bgift(s|ed|ing)?\b",
@@ -44,9 +44,10 @@ def keyword_intent(text: str) -> str:
     """Deterministic fallback used when the router returns unusable JSON.
 
     With a single specialist agent the only question worth asking is whether the
-    message asks for product; everything else belongs to the front desk.
+    message asks for product. Everything else is out of scope, and out of scope means
+    a person -- so the fallback is biased towards handing over rather than guessing.
     """
-    return "gift_request" if _matches(text, _GIFT_PATTERNS) else "general_inquiry"
+    return "gift_request" if _matches(text, _GIFT_PATTERNS) else "out_of_scope"
 
 
 @dataclass
@@ -59,8 +60,9 @@ class RouteResult:
     raw: dict | None = None
 
     @property
-    def agent(self) -> str:
-        return AGENT_FOR_INTENT[self.intent]
+    def agent(self) -> str | None:
+        """The agent that handles this intent, or None when nothing does."""
+        return AGENT_FOR_INTENT.get(self.intent)
 
 
 async def route(
@@ -92,7 +94,7 @@ async def route(
 
     parsed = result.parsed or {}
     intent = parsed.get("intent")
-    if intent not in AGENT_FOR_INTENT:
+    if intent not in INTENTS:
         heuristic = keyword_intent(user_message)
         return RouteResult(
             intent=heuristic,

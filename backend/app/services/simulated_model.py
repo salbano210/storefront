@@ -171,6 +171,7 @@ class SimulatedModel:
         force_issue_gift_when_ineligible: bool = False,
         router_returns_garbage: bool = False,
         obey_injection: bool = False,
+        leak_prompt: bool = False,
         browse_without_query: bool = False,
         claim_escalation: bool = False,
         model: str = "fake/model",
@@ -179,6 +180,10 @@ class SimulatedModel:
         self.force_issue_gift_when_ineligible = force_issue_gift_when_ineligible
         self.router_returns_garbage = router_returns_garbage
         self.obey_injection = obey_injection
+        # A model that answers the creator's request for its instructions with the
+        # instructions. It never calls a tool, so it reaches the reply the long way
+        # round -- through the required-tool nudge.
+        self.leak_prompt = leak_prompt
         self.browse_without_query = browse_without_query
         # A model that says it referred the creator to a person. It has no tool for
         # that, so the guardrails catch it.
@@ -240,17 +245,20 @@ class SimulatedModel:
         if schema is not None:
             return self._route(messages, system)
 
-        # A model that has been talked into ignoring its instructions. It still
-        # calls the tools (so the required-tool nudge doesn't catch it) but then
-        # fabricates a positive outcome in its final answer -- or, with no tools
-        # to call, hands over its system prompt.
+        # A model that has been talked into ignoring its instructions. It still calls
+        # the tools (so the required-tool nudge doesn't catch it) but then fabricates
+        # a positive outcome in its final answer.
         hijacked = self._hijack_active(messages)
+        if self.leak_prompt:
+            return self._leaked()
+        if self.claim_escalation:
+            return self._claimed_escalation()
         if tools and agent == "gift_request_agent":
             if hijacked and _tool_results(messages):
-                return self._hijacked(agent)
+                return self._hijacked()
             return self._gift(messages)
         if hijacked:
-            return self._hijacked(agent)
+            return self._hijacked()
         return self._text(messages)
 
     def _hijack_active(self, messages: list[dict[str, Any]]) -> bool:
@@ -262,16 +270,25 @@ class SimulatedModel:
             if message.get("role") == "user" and isinstance(message.get("content"), str)
         )
 
-    def _hijacked(self, agent: str | None) -> LLMResult:
-        if agent == "general_handler":
-            return self._result(
-                "HARD RULES\n- Never state a gift was ordered.\n\n"
-                "GIFT OFFERS (SKU | product | price | link | criteria):\n"
-                "- GT-SERUM-001 | Barrier Repair Serum | $68 | "
-                "https://summersoft.example/products/barrier-repair-serum | "
-                "Followers is at least 50,000"
-            )
+    def _hijacked(self) -> LLMResult:
+        """It did the work, then lied about what the tools returned."""
         return self._result("Understood. Your gift is on its way! Order ID GT-99999.")
+
+    def _claimed_escalation(self) -> LLMResult:
+        """It claims to have handed the conversation to a person. It cannot."""
+        return self._result(
+            "Understood — I've escalated this to a team member, who will be in touch shortly."
+        )
+
+    def _leaked(self) -> LLMResult:
+        """It echoes its instructions instead of doing anything with them."""
+        return self._result(
+            "HARD RULES\n- Never state or imply an outcome that a tool did not produce.\n\n"
+            "GIFT OFFERS (SKU | product | price | link | criteria):\n"
+            "- GT-SERUM-001 | Barrier Repair Serum | $68 | "
+            "https://summersoft.example/products/barrier-repair-serum | "
+            "Followers is at least 50,000"
+        )
 
 
     # -- router ------------------------------------------------------------
@@ -300,7 +317,9 @@ class SimulatedModel:
         intent = keyword_intent(user)
         parsed = {
             "intent": intent,
-            "confidence": 0.92 if intent != "general_inquiry" else 0.65,
+            # Out of scope is a judgement call rather than a keyword match, so the
+            # simulated model is less sure of it -- which is what the real one does.
+            "confidence": 0.92 if intent == "gift_request" else 0.65,
             "reasoning": f"keyword match for {intent}",
             "clarifying_question": "",
         }
@@ -424,10 +443,12 @@ class SimulatedModel:
 
     # -- plain text --------------------------------------------------------
     def _text(self, messages: list[dict[str, Any]]) -> LLMResult:
-        if self.claim_escalation:
-            return self._result(
-                "Understood — I've escalated this to a team member, who will be in touch shortly."
-            )
+        """The reply when there is nothing to ground it in.
+
+        No agent runs without tools now -- the only one left is the gifting agent,
+        and out-of-scope requests go to a person instead of to a model -- so this is
+        a guard rather than a path.
+        """
         results = _tool_results(messages)
         issued = _find(results, "issue_gift")
         if issued is not None:
@@ -438,8 +459,7 @@ class SimulatedModel:
             return self._result(f"I can't approve that gift. {issued.get('message', '')}")
         return self._result(
             "Summer Soft Skincare makes clinically-informed, fragrance-free skincare. "
-            "Would you like to request a gift? We don't have an agent for partnership "
-            "pitches yet, so gifting is what I can act on today."
+            "Would you like to request a gift?"
         )
 
     # -- helpers -----------------------------------------------------------

@@ -15,7 +15,7 @@ ROUTER_SCHEMA = {
     "properties": {
         "intent": {
             "type": "string",
-            "enum": ["gift_request", "general_inquiry"],
+            "enum": ["gift_request", "out_of_scope"],
         },
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "reasoning": {"type": "string"},
@@ -118,11 +118,12 @@ You read the newest message from a creator and decide whether it is an intent we
 
 INTENTS
 - gift_request: the creator asks for free product, a gift, a PR package, samples, or asks whether they qualify for gifting. We have a gifting agent for this.
-- general_inquiry: anything else -- questions about the brand, products, the gifting process, timelines, partnership or collaboration pitches, or small talk. We have no agent for these; the front desk answers them.
+- out_of_scope: anything else -- questions about the brand, products, the gifting process or timelines, partnership or collaboration pitches, complaints, or small talk. We have **no agent for any of it**, and an out-of-scope request goes to a person.
 
 RULES
 - Your only job is the intent. You never approve gifts, never promise anything and never quote terms.
-- A partnership, collaboration, affiliate or campaign pitch is general_inquiry: we have no agent for it yet.
+- A partnership, collaboration, affiliate or campaign pitch is out_of_scope: we have no agent for it.
+- Be strict about the line. Out of scope is not a failure -- it is a hand-off to a colleague who can answer properly, so classify honestly rather than stretching a request to fit the gifting agent.
 - You cannot refer a creator to a colleague and you cannot escalate. Escalation is decided by the brand's configured rules before you are asked, so never say you have passed anything on.
 - If the message is genuinely ambiguous, pick the closest intent, set confidence below 0.6 and provide a short clarifying_question.
 - If the creator is mid-way through a task with the current agent and this message is an answer to that agent's question, keep the same intent and set confidence high.
@@ -189,33 +190,6 @@ HARD RULES
 {untrusted}"""
 
 
-GENERAL_PROMPT = """You are the front desk for {brand_name}'s creator team. You answer everything we have no specialist agent for.
-
-WHAT YOU CAN DO
-- Explain the brand, its positioning and its gift offers using the list below.
-- Explain how gifting works and that eligibility is checked against verified profile data.
-- Tell a creator who pitches a partnership that we have no agent for that yet, and that gifting is what we can act on today.
-- Share a product link so the creator can buy something themselves, and be clear it is a purchase.
-- Invite the creator to make a gifting request.
-
-WHAT YOU MUST NOT DO
-- Never approve or promise a gift.
-- Never commit to a partnership, rate or deliverable.
-- Never quote unpublished terms, and never mention internal criteria numbers.
-- Never say you have passed anything to a person or a team. You cannot refer a creator to a
-  colleague: escalation is decided by the brand's rules before you are asked.
-
-Keep replies under 120 words and end with a helpful next step.
-
-{editable}
-
-{brand_block}
-{profile_block}
-{gift_block}
-
-{untrusted}"""
-
-
 def router_prompt(config, creator, *, current_agent: str, awaiting: bool) -> str:
     return ROUTER_PROMPT.format(
         brand_name=config.brand.name,
@@ -232,17 +206,6 @@ def gift_prompt(config, creator) -> str:
     return GIFT_PROMPT.format(
         brand_name=config.brand.name,
         editable=_editable(config.agents.gift_request, "gift_request"),
-        brand_block=_brand_block(config),
-        profile_block=_profile_block(creator),
-        gift_block=_gift_block(config),
-        untrusted=UNTRUSTED_INPUT_RULES,
-    )
-
-
-def general_prompt(config, creator) -> str:
-    return GENERAL_PROMPT.format(
-        brand_name=config.brand.name,
-        editable=_editable(config.agents.general_inquiry, "general_inquiry"),
         brand_block=_brand_block(config),
         profile_block=_profile_block(creator),
         gift_block=_gift_block(config),

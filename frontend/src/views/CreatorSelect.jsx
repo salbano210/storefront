@@ -348,8 +348,8 @@ export default function CreatorSelect() {
         <ol className="steps">
           <li>
             <strong>Route.</strong> An intent agent decides whether your message is something we
-            have an agent for. Gifting requests go to the gifting agent; everything else goes to
-            the front desk.
+            have an agent for. Gifting requests go to the gifting agent; everything else is out of
+            scope, and out of scope goes to a person.
           </li>
           <li>
             <strong>Execute.</strong> The specialist calls real backend tools — verified profile

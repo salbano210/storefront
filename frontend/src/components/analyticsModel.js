@@ -10,7 +10,7 @@
  * conversation reads the same colour here as it does in the chat and the logs. */
 export const INTENT_TONES = {
   gift_request: 'coral',
-  general_inquiry: 'slate',
+  out_of_scope: 'amber',
   unknown: 'muted',
 }
 

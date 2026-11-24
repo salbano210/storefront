@@ -97,10 +97,12 @@ RECIPES: tuple[Recipe, ...] = (
     # Eligible, but the delivery address was never settled, so nothing was ordered.
     Recipe("details_required", "creator_001", ("Hi, I'd love to try the Barrier Repair Serum.",), weight=3),
     Recipe("details_required", "creator_005", ("Can I get the Barrier Repair Serum?",), weight=2),
-    # Questions, including the partnership pitch we have no agent for.
-    Recipe("inquiry", "creator_002", ("What products do you sell?",), weight=4),
-    Recipe("inquiry", "creator_004", ("What's your shipping policy?",), weight=3),
-    Recipe("inquiry", "creator_005", ("I'd love to partner with you on a launch campaign.",), weight=3),
+    # Questions, including the partnership pitch we have no agent for. Nothing
+    # answers these: the intent agent classifies them as out of scope and the
+    # conversation is handed to a person, which is the whole point of the rule.
+    Recipe("escalated", "creator_002", ("What products do you sell?",), weight=4),
+    Recipe("escalated", "creator_004", ("What's your shipping policy?",), weight=3),
+    Recipe("escalated", "creator_005", ("I'd love to partner with you on a launch campaign.",), weight=3),
     # Handed to a human by a configured keyword. These never reach the model.
     Recipe("escalated", "creator_003", ("Could I speak to a human about my order, please?",), weight=2),
     Recipe("escalated", "creator_004", ("I'm not happy. I've spoken to my lawyer about this.",), weight=1),

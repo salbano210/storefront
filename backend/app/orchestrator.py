@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import evaluation, guardrails
-from .agents import general_handler, prompts, router_agent, tool_agent
+from .agents import prompts, router_agent, tool_agent
 from .models import Conversation, Event, Session as SessionRow
 from .schemas import BrandConfig, CreatorProfile
 from .services import conversation_store as store
@@ -298,6 +298,7 @@ async def _hold_escalated(
     start_id: int,
     reason: escalation.Escalation | None = None,
     already_escalated: bool = False,
+    intent: str = "",
 ) -> TurnResult:
     """Leave the conversation with a human, and say so.
 
@@ -313,8 +314,12 @@ async def _hold_escalated(
     told nothing at all, so no message is recorded -- an empty one would render as a
     blank bubble in the chat. The turn still goes on the record, because a creator
     talking into the void with no trace of it would be worse than an empty message.
+
+    ``intent`` is passed in only on the turn that decides the escalation. It is the
+    classification that *caused* an out-of-scope hand-off, so it belongs on the
+    conversation for the dashboard to count.
     """
-    intent = conversation.intent or ""
+    intent = intent or conversation.intent or ""
     reply = config.escalation.reply
     outcome: dict[str, Any] = {"type": "escalated"}
     if reason is not None:
@@ -355,6 +360,7 @@ async def _hold_escalated(
         # The agent does not own this conversation any more, so nothing resumes it.
         clear_pending=True,
         status=ESCALATED_STATUS,
+        intent=intent or None,
         disposition=disposition_for("escalated"),
         last_outcome="escalated",
     )
@@ -500,7 +506,42 @@ async def handle_turn(
         },
     )
 
-    target_agent = route_result.agent
+    # One specialist. If the router decides this is not a gifting request, the
+    # conversation leaves the agent: we would rather a person answer it than have a
+    # model improvise an answer the brand never approved. The classification is the
+    # model's; the hand-off is Python's, so "out of scope" cannot be argued away.
+    if route_result.intent != "gift_request":
+        reason = escalation.out_of_scope(route_result.intent, route_result.reasoning)
+        await logger.log(
+            events.ESCALATED,
+            agent="escalation",
+            status="blocked",
+            summary=reason.summary(),
+            payload={
+                "kind": reason.kind,
+                "reason": reason.reason,
+                "detail": reason.detail,
+                "check": reason.check,
+                "intent": route_result.intent,
+                "confidence": route_result.confidence,
+                "note": (
+                    "The intent agent classified this as a request we have no agent for, so it "
+                    "was handed to a human. No agent ran, no tool was available and no reply was "
+                    "generated for it."
+                ),
+            },
+        )
+        return await _hold_escalated(
+            db,
+            conversation=conversation,
+            logger=logger,
+            config=config,
+            start_id=start_id,
+            reason=reason,
+            intent=route_result.intent,
+        )
+
+    target_agent = "gift_request_agent"
     if conversation.pending_agent == target_agent:
         await logger.log(
             events.AGENT_RESUMED,
@@ -534,28 +575,17 @@ async def handle_turn(
         agent=target_agent,
     )
 
-    if target_agent == "gift_request_agent":
-        run = await tool_agent.run_tool_agent(
-            llm,
-            agent_name=target_agent,
-            model=config.models.gift_request,
-            system=prompts.gift_prompt(config, creator),
-            history=history,
-            user_message=user_message,
-            ctx=ctx,
-            config=config,
-            creator=creator,
-        )
-    else:
-        text = await general_handler.run_general(
-            llm,
-            config=config,
-            creator=creator,
-            history=history,
-            user_message=user_message,
-            clarifying_question=route_result.clarifying_question,
-        )
-        run = tool_agent.AgentRun(text=text, model=config.models.general_inquiry)
+    run = await tool_agent.run_tool_agent(
+        llm,
+        agent_name=target_agent,
+        model=config.models.gift_request,
+        system=prompts.gift_prompt(config, creator),
+        history=history,
+        user_message=user_message,
+        ctx=ctx,
+        config=config,
+        creator=creator,
+    )
 
     outcome = _extract_outcome(
         run,

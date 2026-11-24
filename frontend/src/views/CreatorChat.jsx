@@ -196,7 +196,7 @@ export default function CreatorChat() {
               <p>
                 You're chatting with <strong>Summer Soft Skincare</strong> as{' '}
                 <strong>{creator?.name || creatorId}</strong>. Ask about a product or request a gift.
-                Partnership pitches go to the front desk — we have no agent for those yet.
+                Anything else — a partnership pitch, a question we don't cover — goes to a person.
               </p>
               <div className="quick-prompts">
                 {QUICK_PROMPTS.map((prompt) => (

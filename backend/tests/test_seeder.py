@@ -62,13 +62,13 @@ async def test_it_fills_the_dashboard_with_a_realistic_mix(client, use_fake_llm)
     assert summary["errors"] == []
     assert summary["conversations"] == FULL
     # Every outcome the recipes describe, which between them cover all three
-    # dispositions and both intents.
+    # dispositions and both intents. Nothing answers an out-of-scope request, so
+    # the question recipes land on "escalated" rather than on an answer.
     assert set(summary["outcomes"]) == {
         "gift_issued",
         "gift_duplicate",
         "gift_declined",
         "details_required",
-        "inquiry",
         "escalated",
     }
     # Spread across creators, so the logs' creator filter has something in it.

@@ -73,9 +73,7 @@ PROMPT_LEAK_MARKERS: tuple[str, ...] = (
     "brand admin constraints",
     "creator in this conversation (id, verified)",
     "you are the gifting agent",
-    "you are the front desk",
     "you are the intent agent",
-    "what you must not do",
     "untrusted input",
     "the creator is already identified",
 )

@@ -206,7 +206,6 @@ export function AgentEditor({ agents, onChange }) {
   const titles = {
     router: 'Routing agent',
     gift_request: 'Gift request agent',
-    general_inquiry: 'General inquiry handler',
   }
   return (
     <div className="rows">
@@ -238,7 +237,7 @@ export function AgentEditor({ agents, onChange }) {
 }
 
 export function ModelsEditor({ models, catalog, onChange }) {
-  const keys = ['router', 'gift_request', 'general_inquiry', 'fallback']
+  const keys = ['router', 'gift_request', 'fallback']
   const recommended = catalog.filter((model) => model.recommended)
   const options = recommended.length ? recommended : catalog
   return (

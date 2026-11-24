@@ -197,7 +197,6 @@ AGENT_TOOLS: dict[str, list[str]] = {
         "validate_shipping_address",
         "issue_gift",
     ],
-    "general_handler": [],
 }
 
 

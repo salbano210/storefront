@@ -44,10 +44,10 @@ BUCKET_DAYS = {"day": 1, "week": 7, "month": 30}
 # The intent vocabulary, with the names the dashboard shows.
 INTENT_LABELS = {
     "gift_request": "Gift request",
-    "general_inquiry": "Other",
+    "out_of_scope": "Out of scope",
     "unknown": "Unclassified",
 }
-INTENT_ORDER = ("gift_request", "general_inquiry")
+INTENT_ORDER = ("gift_request", "out_of_scope")
 
 DISPOSITION_LABELS = {
     "gift_request_approved": "Gift request approved",

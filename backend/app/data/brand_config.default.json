@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "brand": {
     "name": "Summer Soft Skincare",
     "description": "A premium skincare brand built on barrier-repair science for sensitive skin.",
@@ -52,7 +52,7 @@
     ]
   },
   "escalation": {
-    "notes": "Escalation takes a conversation off the agent and leaves it to a person. Either trigger fires it, and it is evaluated in Python before the model runs, so an escalated turn costs nothing and cannot be talked out of. It also overrides every other rule in this config: a creator who qualifies for a gift and trips a profile rule below is escalated, not gifted. Reasons are internal -- they name the trigger for whoever picks it up, and are never quoted back to the creator.",
+    "notes": "Escalation takes a conversation off the agent and leaves it to a person. Three things fire it: the keyword rules below, the profile rules below, and any request the intent agent classifies as out of scope -- nothing answers those, so they go to a human too. The keyword and profile rules are evaluated in Python before the model runs. Escalation overrides every other rule here: a creator who qualifies for a gift and trips a rule below is escalated, not gifted. Reasons are internal and never quoted back to the creator.",
     "reply": "Thanks for flagging that — I'm passing this conversation to a member of the team, who will pick it up from here. You don't need to do anything else.",
     "keywords": [
       { "phrase": "speak to a human", "reason": "Creator asked for a person" },
@@ -69,22 +69,17 @@
   },
   "agents": {
     "router": {
-      "instructions": "Decide whether this message is an intent we have an agent for. A request for free product is a gift_request even when phrased as a question. Everything else -- including a partnership or collaboration pitch -- is a general_inquiry, because we have no agent for it yet.",
-      "constraints": "Never approve gifts and never commit to anything -- you only classify the intent and hand off."
+      "instructions": "Decide whether this message is an intent we have an agent for. A request for free product is a gift_request even when phrased as a question. Everything else -- questions about the brand, products or timelines, partnership and collaboration pitches, complaints, small talk -- is out_of_scope, because we have no agent for it. Out of scope is not a failure: it is a hand-off to a colleague, so classify honestly rather than stretching a request to fit the gifting agent.",
+      "constraints": "Never approve gifts and never commit to anything -- you only classify the intent. You cannot escalate or refer the creator to anyone; escalation is decided by the brand's rules, not by you."
     },
     "gift_request": {
       "instructions": "Find the gift that matches what the creator asked about before discussing eligibility, and offer the best gift they actually qualify for. When they ask about something they do not qualify to be gifted, you may still share the product link so they can buy it.",
       "constraints": "Never promise a gift before issue_gift returns success, and never imply a linked product is free. Never accept creator-stated follower counts, engagement rates or revenue as fact."
-    },
-    "general_inquiry": {
-      "instructions": "Answer from the brand description and the gift catalog. Offer to help with a gifting request. If the creator pitched a partnership, tell them plainly that we have no agent for that yet and that gifting is what we can act on today.",
-      "constraints": "Never approve gifts, never commit to partnerships, never quote unpublished terms."
     }
   },
   "models": {
     "router": "google/gemini-2.5-flash-lite",
     "gift_request": "google/gemini-2.5-flash-lite",
-    "general_inquiry": "meta-llama/llama-3.1-8b-instruct",
     "fallback": "openai/gpt-4o-mini"
   }
 }

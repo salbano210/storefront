@@ -1,1 +1,1 @@
-"""Agents: intent routing, gifting and the front desk."""
+"""Agents: intent routing and gifting. Anything else goes to a person."""

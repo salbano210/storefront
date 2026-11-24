@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.db import AsyncSessionLocal
 from app.models import Conversation, GiftOrder
+from app.orchestrator import ESCALATED_STATUS
 from app.services import config_manager, data_store
 from conftest import ADMIN_HEADERS
 
@@ -147,8 +148,8 @@ async def test_scenario_2_rejected_gifting(client, use_fake_llm):
 # Scenario 3 -- a partnership pitch is an intent we have no agent for
 # ---------------------------------------------------------------------------
 async def test_scenario_3_pitch_has_no_agent(client, use_fake_llm):
-    """The intent agent decides we can't action this, so the front desk takes it."""
-    use_fake_llm()
+    """The intent agent decides we can't action this, so a person takes it."""
+    fake = use_fake_llm()
     response = await send(
         client,
         "creator_005",
@@ -158,17 +159,22 @@ async def test_scenario_3_pitch_has_no_agent(client, use_fake_llm):
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    assert payload["intent"] == "general_inquiry"
-    assert payload["agent"] == "general_handler"
-    assert payload["outcome"]["type"] == "inquiry"
+    assert payload["intent"] == "out_of_scope"
+    assert payload["agent"] == "escalation"
+    assert payload["outcome"]["type"] == "escalated"
+    assert payload["outcome"]["trigger"] == "out_of_scope"
 
     events = await events_for(client, payload["conversation_id"])
-    # Nothing business-critical ran, and nothing was promised.
+    # No agent ran, so nothing business-critical was touched and nothing was promised.
     assert not any(event["type"] in {"gift_issued", "criteria_evaluated"} for event in events)
+    assert not any(event["agent"] == "gift_request_agent" for event in events)
+    # Classifying the intent is the only model call the turn makes.
+    assert [(call["agent"], call["tools"]) for call in fake.calls] == [("router_agent", [])]
 
     row = await conversation_row(payload["conversation_id"])
-    assert row.intent == "general_inquiry"
-    assert row.disposition == "other"
+    assert row.intent == "out_of_scope"
+    assert row.disposition == "escalated"
+    assert row.status == ESCALATED_STATUS
 
 
 # ---------------------------------------------------------------------------
@@ -312,18 +318,20 @@ async def test_scenario_8_router_fallback(client, use_fake_llm):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 9 -- general inquiry never touches business tools
+# Scenario 9 -- out of scope never touches business tools
 # ---------------------------------------------------------------------------
-async def test_scenario_9_general_inquiry_uses_no_tools(client, use_fake_llm):
+async def test_scenario_9_out_of_scope_uses_no_tools(client, use_fake_llm):
+    """Nothing answers an out-of-scope request, so no tool is even offered."""
     fake = use_fake_llm()
     response = await send(client, "creator_001", "What products do you sell?")
     payload = response.json()
-    assert payload["agent"] == "general_handler"
-    assert payload["outcome"]["type"] == "inquiry"
+    assert payload["agent"] == "escalation"
+    assert payload["outcome"]["type"] == "escalated"
 
     events = await events_for(client, payload["conversation_id"])
     assert not any(event["type"] == "gift_issued" for event in events)
-    assert all(call["tools"] == [] for call in fake.calls if call["agent"] == "general_handler")
+    assert not any(call["tools"] for call in fake.calls)
+    assert {call["agent"] for call in fake.calls} == {"router_agent"}
 
 
 # ---------------------------------------------------------------------------
@@ -531,8 +539,9 @@ async def test_awaiting_answer_is_decided_from_the_outcome():
     assert _awaiting_answer({"type": "gift_issued"}, gift_agent) is False
     assert _awaiting_answer({"type": "gift_declined", "alternatives": []}, gift_agent) is False
     assert _awaiting_answer({"type": "gift_suggested"}, gift_agent) is False
-    # The general handler owns no task, so it never holds the conversation.
-    assert _awaiting_answer({"type": "inquiry"}, "general_handler") is False
+    # Only the gifting agent owns a task, and escalation is a state rather than a
+    # pending agent -- so nothing holds the conversation on its behalf.
+    assert _awaiting_answer({"type": "inquiry"}, "escalation") is False
 
 
 # ---------------------------------------------------------------------------

@@ -14,14 +14,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from . import metrics
 
 # The intent agent decides whether a message is something we have an agent for.
-# There is one specialist (gifting) plus the front desk that answers the rest.
-Intent = Literal["gift_request", "general_inquiry"]
+# There is one specialist (gifting). Everything else is out of scope and goes to a
+# person -- there is no general-purpose agent to fall back on.
+Intent = Literal["gift_request", "out_of_scope"]
 
 # Bumped when the shipped configuration gains a field an already-stored
 # configuration has to pick up (see ``BrandConfig.schema_version``).
-CONFIG_SCHEMA_VERSION = 4
+CONFIG_SCHEMA_VERSION = 5
 
-AGENT_KEYS = ("router", "gift_request", "general_inquiry")
+AGENT_KEYS = ("router", "gift_request")
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +236,6 @@ class AgentsConfig(BaseModel):
 
     router: AgentInstruction = Field(default_factory=AgentInstruction)
     gift_request: AgentInstruction = Field(default_factory=AgentInstruction)
-    general_inquiry: AgentInstruction = Field(default_factory=AgentInstruction)
 
 
 class ModelsConfig(BaseModel):
@@ -243,8 +243,7 @@ class ModelsConfig(BaseModel):
 
     router: str = Field("google/gemini-2.5-flash-lite", min_length=3)
     gift_request: str = Field("google/gemini-2.5-flash-lite", min_length=3)
-    general_inquiry: str = Field("meta-llama/llama-3.1-8b-instruct", min_length=3)
-    fallback: str = Field("openai/gpt-4.1-nano", min_length=3)
+    fallback: str = Field("openai/gpt-4o-mini", min_length=3)
 
 
 class BrandConfig(BaseModel):

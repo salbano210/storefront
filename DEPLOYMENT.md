@@ -142,8 +142,9 @@ Then walk the scenarios in [README.md](README.md#demo-scenarios). The reliable p
    **Save** → back to chat as **Paul Thomas Anderson** → he now clears eligibility, and the log shows
    `config v2`.
 5. `/` → pick **Sofia Coppola** → pitch a partnership → the intent agent classifies it as
-   `general_inquiry`, the front desk answers, and no gifting tool runs. We have no partnership agent;
-   the demo says so rather than pretending. Then `/analytics` shows it counted as **Other**.
+   `out_of_scope`, no agent runs, and the conversation is handed to a person. We have no partnership
+   agent, and the request goes where a human can answer it rather than being improvised at. Then
+   `/analytics` shows it counted as **Escalated to a human**.
 6. Back as **Kathryn Bigelow**: ask for the serum, then answer with
    *"123 Example Street, Boston, MA 02111"* → the address is rejected, the agent offers `02110`, and
    nothing is ordered until she accepts the correction.
