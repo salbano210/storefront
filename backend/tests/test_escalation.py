@@ -453,13 +453,24 @@ async def test_the_shipped_keywords_are_all_reachable(client, use_fake_llm):
     samples = {
         "speak to a human": "Can I speak to a human?",
         "talk to a person": "I want to talk to a person.",
+        "status of": (
+            "I need to check on the status of the gift you guys said you were sending - "
+            "where is it?"
+        ),
+        "where is my": "Where is my gift? It's been over a week.",
+        "tracking": "Do you have a tracking number for my parcel?",
+        "has it shipped": "Has it shipped yet?",
+        "when will it arrive": "When will it arrive?",
+        "did you send": "Did you send the package I was promised?",
         "allergic reaction": "I think I had an allergic reaction to the serum.",
         "lawyer": "My lawyers will hear about this.",
         "refund": "I'd like a refund, please.",
         "journalist": "I'm a journalist writing about skincare.",
     }
-    for phrase in samples:
-        assert phrase in [item["phrase"] for item in config["escalation"]["keywords"]]
+    configured = [item["phrase"] for item in config["escalation"]["keywords"]]
+    # Both directions: a keyword nobody can reach is dead config, and a sample that is
+    # not configured would make this test pass for the wrong reason.
+    assert set(samples) == set(configured)
 
     for phrase, message in samples.items():
         payload = await chat(client, "creator_002", message)

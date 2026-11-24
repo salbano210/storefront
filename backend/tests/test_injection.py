@@ -91,6 +91,33 @@ def test_fabricated_outcome_detection():
     assert guardrails.claims_gift_success("I can't approve that gift right now") is None
 
 
+def test_fabricated_status_detection():
+    """Plural and delivery-status phrasings, from a real conversation.
+
+    A live model answered a question about the status of a gift with three products
+    "on their way" that no tool had ever ordered. The singular "on its way" pattern
+    missed every one of those words.
+    """
+    reply = (
+        "The Barrier Repair Serum, Hydrating Cleanser, and Discovery Set are all on "
+        "their way to you! You can expect them to arrive soon."
+    )
+    assert guardrails.claims_gift_success(reply)
+    assert guardrails.claims_gift_success("They have been sent to your address")
+    assert guardrails.claims_gift_success("Your order should be arriving shortly")
+    # A model asking for the address, or declining, is not a claim of an outcome.
+    assert (
+        guardrails.claims_gift_success("Shall I send it to the address we have on file?")
+        is None
+    )
+    assert (
+        guardrails.claims_gift_success(
+            "I can't check on a delivery once an order is placed, I'm afraid."
+        )
+        is None
+    )
+
+
 # --- end to end with a hijacked model -------------------------------------
 async def test_fabricated_gift_approval_is_replaced(client, use_fake_llm):
     use_fake_llm(obey_injection=True)

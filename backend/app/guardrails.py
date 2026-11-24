@@ -79,13 +79,17 @@ PROMPT_LEAK_MARKERS: tuple[str, ...] = (
 )
 
 # --- fabricated-outcome detection ------------------------------------------
+# "on their way" and "expect them to arrive" are real model output from a live
+# conversation in which three gifts that were never ordered were described as sent.
 GIFT_CLAIM_PATTERNS: tuple[str, ...] = (
-    r"on its way",
+    r"on (its|their|the) way",
     r"order\s+(id|number|reference|#)",
     r"order\s+gt-\d+",
     r"\b(i'?ve|i have|we'?ve|we have)\s+(placed|sent|shipped|issued|arranged|approved)\b",
-    r"\bhas been (placed|shipped|sent|issued)\b",
-    r"\b(is|are|will be)\s+being shipped\b",
+    r"\b(has|have|had)\s+been\s+(placed|shipped|sent|issued|approved)\b",
+    r"\b(is|are|will be|should be)\s+being\s+(shipped|sent)\b",
+    r"\bexpect\s+(them|it|everything|your\s+\w+)\s+to\s+(arrive|ship|be)\b",
+    r"\b(arrives|arriving|shipped|shipping)\s+(soon|shortly|today|tomorrow)\b",
     r"\bgift is approved\b",
     r"\bapproved (your|the) gift\b",
 )

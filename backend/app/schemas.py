@@ -20,7 +20,7 @@ Intent = Literal["gift_request", "out_of_scope"]
 
 # Bumped when the shipped configuration gains a field an already-stored
 # configuration has to pick up (see ``BrandConfig.schema_version``).
-CONFIG_SCHEMA_VERSION = 5
+CONFIG_SCHEMA_VERSION = 6
 
 AGENT_KEYS = ("router", "gift_request")
 

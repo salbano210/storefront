@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "brand": {
     "name": "Summer Soft Skincare",
     "description": "A premium skincare brand built on barrier-repair science for sensitive skin.",
@@ -57,6 +57,12 @@
     "keywords": [
       { "phrase": "speak to a human", "reason": "Creator asked for a person" },
       { "phrase": "talk to a person", "reason": "Creator asked for a person" },
+      { "phrase": "status of", "reason": "Order or delivery status — the agent has no way to check it" },
+      { "phrase": "where is my", "reason": "Order or delivery status — the agent has no way to check it" },
+      { "phrase": "tracking", "reason": "Order or delivery status — the agent has no way to check it" },
+      { "phrase": "has it shipped", "reason": "Order or delivery status — the agent has no way to check it" },
+      { "phrase": "when will it arrive", "reason": "Order or delivery status — the agent has no way to check it" },
+      { "phrase": "did you send", "reason": "Order or delivery status — the agent has no way to check it" },
       { "phrase": "allergic reaction", "reason": "Safety complaint — a human must handle this" },
       { "phrase": "lawyer", "reason": "Legal threat — route to the legal team" },
       { "phrase": "refund", "reason": "Billing question — the agent has no billing tools" },
@@ -69,7 +75,7 @@
   },
   "agents": {
     "router": {
-      "instructions": "Decide whether this message is an intent we have an agent for. A request for free product is a gift_request even when phrased as a question. Everything else -- questions about the brand, products or timelines, partnership and collaboration pitches, complaints, small talk -- is out_of_scope, because we have no agent for it. Out of scope is not a failure: it is a hand-off to a colleague, so classify honestly rather than stretching a request to fit the gifting agent.",
+      "instructions": "Decide whether this message is an intent we have an agent for. A request for free product is a gift_request even when phrased as a question. Everything else -- questions about the brand, products or timelines, questions about the status of an order or a delivery (we have no way to check those), partnership and collaboration pitches, complaints, small talk -- is out_of_scope, because we have no agent for it. Out of scope is not a failure: it is a hand-off to a colleague, so classify honestly rather than stretching a request to fit the gifting agent.",
       "constraints": "Never approve gifts and never commit to anything -- you only classify the intent. You cannot escalate or refer the creator to anyone; escalation is decided by the brand's rules, not by you."
     },
     "gift_request": {
