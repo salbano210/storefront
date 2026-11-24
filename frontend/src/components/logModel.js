@@ -183,6 +183,19 @@ function buildToolStory(name, args, result, event) {
   }
 }
 
+/** What fired a hand-off, in the reader's words.
+ *
+ * Three kinds now: the creator's own words, a rule about their verified profile,
+ * or the intent agent deciding we have no agent for the request at all. The third
+ * is a classification rather than a match, so it reads as one. */
+function escalationTrigger(payload) {
+  if (payload.kind === 'metric') return `profile rule = ${payload.detail}`
+  if (payload.kind === 'out_of_scope') {
+    return `intent = ${payload.intent || 'out of scope'} — nothing handles it`
+  }
+  return `keyword = “${payload.detail}”`
+}
+
 /** The plain-language view of one event: what was done, with what, what came back. */
 export function eventStory(event) {
   const payload = event.payload || {}
@@ -196,11 +209,7 @@ export function eventStory(event) {
   if (event.type === 'escalated') {
     return {
       action: 'Handed the conversation to a human',
-      input: [
-        payload.kind === 'metric'
-          ? `profile rule = ${payload.detail}`
-          : `keyword = “${payload.detail}”`,
-      ],
+      input: [escalationTrigger(payload)],
       output: payload.reason || 'Escalated',
       note: payload.note,
     }
@@ -260,7 +269,10 @@ function stepFor(event) {
   const payload = event.payload || {}
   if (event.type === 'message_received') return 'creator'
   if (event.type === 'message_sent') return 'agent'
-  if (event.type === 'escalated') return payload.kind === 'metric' ? 'profile rule' : 'keyword'
+  if (event.type === 'escalated') {
+    if (payload.kind === 'metric') return 'profile rule'
+    return payload.kind === 'out_of_scope' ? 'out of scope' : 'keyword'
+  }
   if (event.type === 'escalation_released') return 'admin'
   return payload.tool || event.type
 }
