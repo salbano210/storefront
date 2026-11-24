@@ -16,6 +16,11 @@ sage is Python, amber is a hand-off to a human.
 
 ## One creator turn
 
+<img src="docs/agent-flow.png" width="650" alt="Flowchart: the creator message passes a budget guard, an escalation check, the intent agent, the gifting agent's tool loop and the reply guardrails, then lands in the conversation state, the event log and the two views">
+
+<details>
+<summary>Mermaid source</summary>
+
 ```mermaid
 flowchart TD
     IN["Creator message<br/>POST /api/chat"] --> GATE{"Daily budget,<br/>per-IP rate limit"}
@@ -51,6 +56,8 @@ flowchart TD
     class GATE,ESC,DECIDE,GUARD,RUN,RECV,STATE,EVENTS,VIEWS,SEND,REPLACE,BLOCK py
     class HUMAN exit
 ```
+
+</details>
 
 **The loop.** The gifting agent runs the usual agent cycle — the model asks for a tool,
 Python runs it and returns the result, the model sees it and goes again — bounded at
@@ -105,6 +112,11 @@ creator sees it. Four ways it can be replaced, each logged as `guardrail_blocked
 
 ## The layers around them
 
+<img src="docs/agent-flow-layers.png" width="820" alt="Flowchart: the brand config feeds the Python rules and the two agents, which call OpenRouter; both produce decisions, which are logged with the config version and read by the logs and analytics views">
+
+<details>
+<summary>Mermaid source</summary>
+
 ```mermaid
 flowchart LR
     CFG["Brand config<br/>versioned, admin-editable<br/>gifts · escalation rules<br/>agent instructions · models"]
@@ -125,6 +137,8 @@ flowchart LR
     class AGENTS,LLM llm
     class CFG,RULES,OUT,LOG,UI py
 ```
+
+</details>
 
 None of that is hard-coded: thresholds, escalation keywords, the agent instructions and
 even the model each agent runs on live in the config, which is stored in the database and
@@ -152,3 +166,20 @@ audit trail proves which rules applied to a decision.
 
 The README has the same request path as a compact text diagram, alongside the demo
 scenarios and what each one is meant to show.
+
+---
+
+## Regenerating the images
+
+The two PNGs in `docs/` are rendered from the Mermaid source above with
+[`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli), so an edit to a
+diagram needs one command to reach the image:
+
+```bash
+npx -y @mermaid-js/mermaid-cli -i ARCHITECTURE.md -o /tmp/out.md -e png -s 2 -b white
+cp /tmp/out-1.png docs/agent-flow.png
+cp /tmp/out-2.png docs/agent-flow-layers.png
+```
+
+`-s 2` renders at double size, which is what keeps the text sharp when the image is
+displayed at half width.

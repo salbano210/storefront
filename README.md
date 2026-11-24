@@ -97,9 +97,9 @@ Browser ──https──▶ FastAPI (uvicorn :10000)
 
 ### How one turn flows
 
-**Flowchart:** [`ARCHITECTURE.md`](ARCHITECTURE.md) has the agent architecture as
-rendered Mermaid diagrams — the request path with its decision points, and the layers
-around it. The terse version:
+**Flowchart:** [`ARCHITECTURE.md`](ARCHITECTURE.md) draws the agent architecture — the
+request path with its decision points, and the layers around it. The rendered images live
+in [`docs/`](docs/), with the Mermaid source behind each one. The terse version:
 
 ```
 POST /api/chat
