@@ -236,6 +236,34 @@ def second_gift_reply(records: Sequence[Any]) -> str | None:
     return None
 
 
+def address_confirmation_reply(records: Sequence[Any]) -> str | None:
+    """What to say when an order was refused because the creator was never asked.
+
+    The flow is request, confirm the address, then order, and this is the middle step.
+    A model that jumps straight to shipping is refused -- and the creator is owed the
+    question, so the reply is built from the rule rather than from whatever the model
+    said instead. Quoting the address on file is what makes a plain "yes" enough.
+    """
+    for record in reversed(records):
+        if getattr(record, "name", None) != "issue_gift":
+            continue
+        result = getattr(record, "result", None) or {}
+        if result.get("error") != "address_not_confirmed":
+            continue
+        product = result.get("product") or "your gift"
+        address = result.get("address_on_file")
+        if address:
+            return (
+                f"I'd love to send the {product} — before I do, I need you to confirm the "
+                f"delivery address. We have this on file: {address}. Is that right?"
+            )
+        return (
+            f"Great news — you qualify for the {product}. What's the best address to send it to?"
+        )
+    return None
+
+
+
 @dataclass
 class ReplyVerdict:
     """What the post-reply inspection decided."""
@@ -279,6 +307,18 @@ def inspect_reply(
         )
 
     if not _last_ok(records, "issue_gift"):
+        # An order refused because the creator was never asked where to send it: the
+        # reply is the question they were owed, not whatever the model said instead.
+        unasked = address_confirmation_reply(records)
+        if unasked:
+            return ReplyVerdict(
+                replaced=True,
+                guardrail="address_not_confirmed",
+                summary="Reply replaced: the creator has to confirm a delivery address first",
+                replacement=unasked,
+                details={"agent": agent, "model_reply": text[:600]},
+            )
+
         matched = claims_gift_success(text)
         if matched:
             return ReplyVerdict(

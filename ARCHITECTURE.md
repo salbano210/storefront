@@ -72,10 +72,11 @@ decided after it, but the hand-off is still Python's: the model classifies, it d
 choose. In all three cases no agent runs, and a follow-up is *held* rather than answered.
 
 **The guardrails.** A reply is checked against what the tools actually did before the
-creator sees it. Four ways it can be replaced, each logged as `guardrail_blocked`:
+creator sees it. Five ways it can be replaced, each logged as `guardrail_blocked`:
 
 | Check | Catches |
 |---|---|
+| `address_not_confirmed` | an order on the turn the creator first asked — the question they were owed replaces the reply |
 | `one_gift_per_conversation` | a second gift in the same conversation — answered from the rule, naming the order that exists |
 | `ungrounded_gift_claim` | "your gift is on its way" when no tool produced an order |
 | `ungrounded_escalation_claim` | claiming a hand-off to a person that never happened |

@@ -15,12 +15,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import addresses
 from .. import evaluation
-from ..models import GiftOrder, Session as SessionRow
+from ..models import GiftOrder, Message, Session as SessionRow
 from ..schemas import BrandConfig, CreatorProfile
 from ..services import event_logger as events
 from ..services.event_logger import EventLogger
@@ -313,6 +313,23 @@ def _address_on_file(ctx: ToolContext) -> str | None:
     return value or None
 
 
+async def _has_addressed_creator(ctx: ToolContext) -> bool:
+    """Has the agent said anything to this creator yet?
+
+    The delivery address is the agent's question to ask, so an order on the turn the
+    creator first asks for something would be shipping before anyone was asked where
+    to. The reply for this turn has not been written yet, which is what makes the
+    count "earlier turns only".
+    """
+    spoken = await ctx.db.scalar(
+        select(func.count(Message.id)).where(
+            Message.conversation_id == ctx.conversation_id,
+            Message.role == "agent",
+        )
+    )
+    return bool(spoken)
+
+
 async def _validate_shipping_address(args: dict, ctx: ToolContext) -> dict:
     """Check the delivery address, and offer a correction when it fails.
 
@@ -448,6 +465,36 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             agent=ctx.agent,
             summary="Rewrote the creator name to match the verified profile",
             payload={"guardrail": "verified_values_enforced", "adjustments": adjustments},
+        )
+
+    # The order is the last step of the flow, not the first: the creator has to have
+    # been asked about the delivery address before anything ships. The prompt says so,
+    # but a prompt is not a rule -- a model that skips the question and ships to the
+    # address on file gets refused here, and the reply guardrail puts the question the
+    # creator was owed.
+    if not await _has_addressed_creator(ctx):
+        await ctx.logger.log(
+            events.GUARDRAIL_BLOCKED,
+            agent=ctx.agent,
+            status="blocked",
+            summary="Refused issue_gift: the creator has not been asked about the address yet",
+            payload={
+                "guardrail": "address_not_confirmed",
+                "product": offer.name,
+                "address_on_file": _address_on_file(ctx),
+                "note": (
+                    "The first reply in a conversation asks the creator to confirm the "
+                    "delivery address. Nothing ships in it."
+                ),
+            },
+        )
+        return _fail(
+            "address_not_confirmed",
+            "The creator has not been asked about the delivery address yet. Reply by naming the "
+            "gift they qualify for and asking them to confirm the address on file, then place the "
+            "order once they answer.",
+            product=offer.name,
+            address_on_file=_address_on_file(ctx),
         )
 
     # The delivery address is collected from the creator rather than taken from the

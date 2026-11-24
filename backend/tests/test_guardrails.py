@@ -46,6 +46,54 @@ async def test_issue_gift_refuses_ineligible_creator(tool_context, gift_order_co
 
     assert await gift_order_count(session_id) == 0
 
+async def test_an_order_before_the_address_question_is_refused(tool_context, gift_order_count):
+    """The order is the agent's last step, and a prompt is not what enforces that.
+
+    This is the one that shipped broken: the workflow says to offer the address on file
+    and ask the creator to confirm it, but a cheap model can skip straight to shipping,
+    and nothing stopped it. So the server refuses an order that would be the agent's
+    first act -- and the reply has to be the question the creator was owed.
+    """
+    async with tool_context(
+        "creator_001", conversation_id="conv_unasked", agent_has_spoken=False
+    ) as (ctx, db):
+        refused = await execute_tool(
+            "issue_gift",
+            {
+                "creator_name": "Kathryn Bigelow",
+                "sku": "GT-SERUM-001",
+                "shipping_address": "123 Example Street, Boston, MA 02110",
+            },
+            ctx,
+        )
+        assert refused["ok"] is False
+        assert refused["error"] == "address_not_confirmed"
+        # Specific enough that the model can do the right thing on the next call.
+        assert "confirm the address on file" in refused["message"]
+
+        rows = await _events(ctx.conversation_id, db)
+        blocked = [row for row in rows if row.type == "guardrail_blocked"]
+        assert blocked, "expected a guardrail_blocked event"
+        assert "address_not_confirmed" in (blocked[-1].payload_json or "")
+        session_id = ctx.session_id
+
+    assert await gift_order_count(session_id) == 0, "nothing ships before the creator is asked"
+
+    # What the model said instead: an order confirmation for an order that does not exist.
+    verdict = guardrails.inspect_reply(
+        "That's wonderful, Kathryn! The Barrier Repair Serum is a perfect fit. I've placed an "
+        "order for you, and it should be on its way soon. Your order ID is GT-88959.",
+        records=[ToolCallRecord(name="issue_gift", arguments={}, result=refused)],
+        agent="gift_request_agent",
+    )
+    assert verdict.replaced, "the model's confirmation must not be the last word"
+    assert verdict.guardrail == "address_not_confirmed"
+    assert "Barrier Repair Serum" in verdict.replacement
+    assert "123 Example Street, Boston, MA 02110" in verdict.replacement
+    assert "GT-88959" not in verdict.replacement
+
+
+
 
 async def test_issue_gift_happy_path(tool_context, gift_order_count):
     async with tool_context("creator_001", conversation_id="conv_happy") as (ctx, db):

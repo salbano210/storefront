@@ -192,6 +192,12 @@ Eligibility alone does not place an order. The agent has to earn the order:
                                duplicates and the address before it orders
 ```
 
+Step 4 is a rule, not a suggestion: `issue_gift` refuses an order that would be the
+agent's **first** act in the conversation (`address_not_confirmed`), because the question
+is the creator's to answer. A model that skips straight to shipping gets refused, and the
+reply is replaced with the address question the creator was owed — so "ask for a gift" is
+never a one-turn order. Once they have answered, the same order goes through.
+
 `app/addresses.py` is the validator. It is deterministic, with no network and no
 model, and it does what an address service does:
 
@@ -215,6 +221,7 @@ still cannot ship to an address that does not pass.
 | Eligibility gate | `issue_gift` when any of *that gift's* criteria fails | `guardrail_blocked` |
 | Gift gate | Unknown gifts — resolved by id, SKU or name, so a model that passes the wrong identifier gets the right gift rather than a dead end | `guardrail_blocked` (`unknown_gift`) |
 | Address gate | `issue_gift` on an address that does not validate — re-checked in the tool, so skipping `validate_shipping_address` cannot get past it. The refusal carries the correction | `guardrail_blocked` (`address_invalid`) |
+| Ask before shipping | `issue_gift` on the turn the creator first asks, before anyone has been asked where the gift should go. The order is the last step of the flow, not the first; the reply is replaced with the address question | `guardrail_blocked` (`address_not_confirmed`) |
 | Identity enforcement | The creator name on the order is always the verified one. The delivery address is the creator's to give, so it is validated rather than overwritten | `guardrail_adjusted` |
 | Idempotency | Duplicate gift for the same creator + SKU returns the existing order; a DB unique constraint is the backstop | `tool_call_completed` (`duplicate: true`) |
 | One gift per conversation | A second `issue_gift` in the same conversation is refused, so a bad model decision costs one gift, not the catalog. The reply is then written from the rule rather than by the model, so the creator is *told* — otherwise they ask again, the order is refused again, and the conversation loops | `guardrail_blocked` (`one_gift_per_conversation`) |

@@ -172,6 +172,7 @@ class SimulatedModel:
         router_returns_garbage: bool = False,
         obey_injection: bool = False,
         leak_prompt: bool = False,
+        order_without_asking: bool = False,
         browse_without_query: bool = False,
         claim_escalation: bool = False,
         model: str = "fake/model",
@@ -184,6 +185,9 @@ class SimulatedModel:
         # instructions. It never calls a tool, so it reaches the reply the long way
         # round -- through the required-tool nudge.
         self.leak_prompt = leak_prompt
+        # A model that skips the delivery-address question and ships to the address on
+        # file in the turn the creator asked. The server refuses it.
+        self.order_without_asking = order_without_asking
         self.browse_without_query = browse_without_query
         # A model that says it referred the creator to a person. It has no tool for
         # that, so the guardrails catch it.
@@ -403,13 +407,20 @@ class SimulatedModel:
         address = _address_in(user)
         if address is None and _already_asked_for_address(messages, on_file):
             address = on_file  # the creator confirmed the address on file
+        if address is None and self.order_without_asking and on_file:
+            # Skips the question and ships to the address we hold. issue_gift refuses
+            # this, because the creator has not been asked yet.
+            address = on_file
 
         validation = _find(turn, "validate_shipping_address")
         if validation is None:
             # Offer the address we already hold before asking for a new one, and
             # quote it so a plain "yes" is recognisable as the confirmation.
-            if _address_in(user) is None and on_file and not _already_asked_for_address(
-                messages, on_file
+            if (
+                not self.order_without_asking
+                and _address_in(user) is None
+                and on_file
+                and not _already_asked_for_address(messages, on_file)
             ):
                 return self._result(
                     f"Great news -- you qualify for the {gift['name']}. Shall I send it to the "

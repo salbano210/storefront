@@ -580,3 +580,45 @@ async def test_the_same_serum_request_lands_three_ways(client, use_fake_llm):
     assert "gift_issued" not in types
 
 
+
+
+# ---------------------------------------------------------------------------
+# The order is the last step of the flow, not the first
+# ---------------------------------------------------------------------------
+async def test_an_order_waits_for_the_address_question(client, use_fake_llm):
+    """A model that ships to the address on file without asking gets refused.
+
+    This is the failure that shipped: the creator asked for something that would fit,
+    the model picked a gift, and it placed the order in the same reply -- no question
+    about the delivery address, and no second turn. The workflow says to ask first, but
+    a workflow is a prompt, so the rule has to live here.
+    """
+    use_fake_llm(order_without_asking=True)
+    before = await gift_order_count()
+
+    payload = (
+        await send(client, "creator_001", "Hi! I'd love to try the Barrier Repair Serum.")
+    ).json()
+
+    assert payload["outcome"]["type"] == "details_required"
+    assert await gift_order_count() == before, "nothing ships before the creator is asked"
+    assert "on its way" not in payload["reply"].lower()
+    assert "address" in payload["reply"].lower()
+
+    events = await events_for(client, payload["conversation_id"])
+    blocked = [event for event in events if event["type"] == "guardrail_blocked"]
+    assert any(event["payload"]["guardrail"] == "address_not_confirmed" for event in blocked)
+
+    # Once the creator has answered, the same model's order goes through: the rule is
+    # "ask first", not "never order in a hurry".
+    answered = (
+        await send(
+            client,
+            "creator_001",
+            CONFIRM_ADDRESS,
+            conversation_id=payload["conversation_id"],
+        )
+    ).json()
+    assert answered["outcome"]["type"] == "gift_issued"
+    assert answered["outcome"]["order_id"]
+

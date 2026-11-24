@@ -32,7 +32,7 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="storefront-tests-")
 from app.bootstrap import bootstrap  # noqa: E402
 from app.db import AsyncSessionLocal, init_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Conversation, GiftOrder  # noqa: E402
+from app.models import Conversation, GiftOrder, Message  # noqa: E402
 from app.services import config_manager, conversation_store as store, data_store, llm_client  # noqa: E402
 from app.services.event_logger import EventLogger  # noqa: E402
 from app.tools.registry import ToolContext  # noqa: E402
@@ -92,6 +92,7 @@ async def _tool_context(
     creator_id: str,
     agent: str = "gift_request_agent",
     conversation_id: str | None = None,
+    agent_has_spoken: bool = True,
 ):
     """A real ToolContext, including a real conversation row.
 
@@ -110,6 +111,19 @@ async def _tool_context(
             config_version=version,
         )
         db.add(conversation)
+        # The flow asks the creator to confirm the delivery address before anything is
+        # ordered, so a conversation that is ready to order has already been spoken in.
+        # issue_gift refuses an order that would be the agent's first act; that refusal
+        # has its own test, which passes agent_has_spoken=False.
+        if agent_has_spoken:
+            db.add(
+                Message(
+                    conversation_id=conversation.id,
+                    role="agent",
+                    content="Shall I send it to the address we have on file?",
+                    agent="gift_request_agent",
+                )
+            )
         await db.commit()
 
         logger = EventLogger(
