@@ -61,8 +61,8 @@ async def test_logs_cover_every_session(client, use_fake_llm):
         assert (await other.get(f"/api/conversations/{conversation_id}")).status_code == 404
 
 
-async def test_the_index_is_chronological_so_the_newest_is_last(client, use_fake_llm):
-    """The logs page opens the last entry in the index and follows it as new
+async def test_the_index_is_newest_first_so_the_page_opens_the_latest(client, use_fake_llm):
+    """The logs page opens the first entry in the index and follows it as new
     conversations arrive, so the order is a contract rather than a detail."""
     use_fake_llm()
     first = await _chat(client)
@@ -71,12 +71,12 @@ async def test_the_index_is_chronological_so_the_newest_is_last(client, use_fake
     meta = (await client.get("/api/logs/meta")).json()
     ids = [item["id"] for item in meta["conversations"]]
     assert ids == [
-        first.json()["conversation_id"],
         second.json()["conversation_id"],
+        first.json()["conversation_id"],
     ]
 
     stamps = [item["created_at"] for item in meta["conversations"]]
-    assert stamps == sorted(stamps), "the index has to read in time order"
+    assert stamps == sorted(stamps, reverse=True), "the index has to read newest first"
 
 
 async def test_host_key_never_reaches_the_logs(client, use_fake_llm):

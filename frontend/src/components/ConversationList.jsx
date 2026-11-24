@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { conversationRows } from './logModel.js'
 
 /* ---------------------------------------------------------------------------
- * The sidebar: every conversation in chronological order, filed by disposition.
+ * The sidebar: every conversation, newest first, filed by disposition.
  *
  * A list of buttons rather than a table, because this is navigation -- clicking a
  * row is the only thing you can do with it.
@@ -13,10 +13,10 @@ export default function ConversationList({ conversations, selectedId, onSelect }
   const rows = useMemo(() => conversationRows(conversations), [conversations])
   const navRef = useRef(null)
 
-  // The list runs oldest to newest, so the conversation being shown is somewhere down
-  // the list. Bring it into view when the selection changes -- which, while the pane
-  // is following the newest conversation, is what keeps a conversation somebody just
-  // had visible instead of 240 rows below the fold.
+  // The list runs newest to oldest, so the conversation being shown is near the top.
+  // Bring it into view when the selection changes -- which, while the pane is following
+  // the newest conversation, is what keeps a conversation somebody just had visible as
+  // the rows below it pile up.
   useEffect(() => {
     if (!selectedId) return
     const node = navRef.current?.querySelector('.conv-row.selected')

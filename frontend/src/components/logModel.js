@@ -229,7 +229,7 @@ export function eventStory(event) {
   return { action: event.type.replaceAll('_', ' '), input: [], output: event.summary || '', note: null }
 }
 
-/** One sidebar entry per conversation, in the order the API returns them. */
+/** One sidebar entry per conversation, in the order the API returns them: newest first. */
 export function conversationRows(conversations = []) {
   return conversations.map((item) => {
     const disposition = DISPOSITIONS[item.disposition] || null
@@ -253,7 +253,7 @@ export function conversationRows(conversations = []) {
 /**
  * Which conversation the pane should be showing.
  *
- * The index is chronological, so the conversation somebody just had is the last one.
+ * The index is newest first, so the conversation somebody just had is the first one.
  * That is the one to open, and the one to keep following while new conversations
  * arrive -- until they click a row, at which point the choice is theirs and the page
  * stops moving under them.
@@ -261,7 +261,7 @@ export function conversationRows(conversations = []) {
 export function pickSelection(conversations = [], currentId, pinned = false) {
   if (!conversations.length) return null
   if (pinned && conversations.some((item) => item.id === currentId)) return currentId
-  return conversations[conversations.length - 1].id
+  return conversations[0].id
 }
 
 /** The step column: who or what produced the row. */
