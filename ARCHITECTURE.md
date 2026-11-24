@@ -18,7 +18,7 @@ sage is Python, amber is a hand-off to a human.
 
 ```mermaid
 flowchart TD
-    IN["Creator message<br/>POST /api/chat"] --> GATE{"Session cap,<br/>daily budget,<br/>per-IP rate limit"}
+    IN["Creator message<br/>POST /api/chat"] --> GATE{"Daily budget,<br/>per-IP rate limit"}
     GATE -->|blocked| BLOCK["429 · event: budget_blocked"]
     GATE -->|allowed| RECV["event: message_received<br/>with a verified profile snapshot"]
 
