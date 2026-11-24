@@ -90,8 +90,21 @@ STATIC_DIR = _static_dir()
 
 if STATIC_DIR is not None:
     assets = STATIC_DIR / "assets"
+
+    class HashedAssets(StaticFiles):
+        """Vite writes a content hash into every asset filename.
+
+        So a browser can keep one for a year -- and has to, because a cached
+        index.html may still name the previous build's files.
+        """
+
+        async def get_response(self, path: str, scope: dict):
+            response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+
     if assets.exists():
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+        app.mount("/assets", HashedAssets(directory=assets), name="assets")
 
     @app.get("/favicon.svg", include_in_schema=False)
     async def favicon() -> FileResponse:
@@ -101,7 +114,11 @@ if STATIC_DIR is not None:
     async def spa(full_path: str):
         if full_path.startswith("api/"):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
-        return FileResponse(STATIC_DIR / "index.html")
+        # index.html is what names the hashed assets, so the browser must always
+        # revalidate it -- caching it is how a deploy looks like it never happened.
+        response = FileResponse(STATIC_DIR / "index.html")
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 else:  # local dev without a build
 
     @app.get("/", include_in_schema=False)
