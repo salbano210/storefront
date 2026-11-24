@@ -97,12 +97,16 @@ Browser ──https──▶ FastAPI (uvicorn :10000)
 
 ### How one turn flows
 
+**Flowchart:** [`ARCHITECTURE.md`](ARCHITECTURE.md) has the agent architecture as
+rendered Mermaid diagrams — the request path with its decision points, and the layers
+around it. The terse version:
+
 ```
 POST /api/chat
  ├─ resolve the creator from the database (never trust client-supplied metrics)
  ├─ event: message_received
  ├─ escalation check (Python, before any model call)
- │    keyword rule matches the creator's words, or a metric rule matches the profile
+ │    a keyword rule matches the creator's words, or a profile rule matches the metrics
  │    └─ yes → event: escalated, the configured holding reply, and the turn ends here.
  │              No router, no model call, no tools, and nothing resumes it.
  │    └─ no  → continue
@@ -429,7 +433,7 @@ npm run dev                  # http://localhost:5173, proxies /api to :8000
 
 ```bash
 cd backend
-.venv/bin/python -m pytest -q          # 152 tests, no network required
+.venv/bin/python -m pytest -q          # 160 tests, no network required
 ```
 
 The suite covers the guardrails end-to-end with a deterministic fake model: ineligible gifting
@@ -670,7 +674,7 @@ nothing else changes.
 ```
 backend/
   app/
-    agents/        router_agent, tool_agent (shared loop), prompts
+    agents/        router_agent, tool_agent, prompts
     tools/         registry: schemas, validation, guarded executors
     services/      llm_client, config_manager, event_logger, budget, model_catalog,
                    conversation_store, data_store, redactor
@@ -678,10 +682,11 @@ backend/
     data/          creators.json, brand_config.default.json
     addresses.py   delivery-address parsing and validation (no network, no LLM)
     metrics.py     the verified-metric registry + rule language (no LLM)
-    escalation.py  keyword + profile triggers for handing a conversation to a human (no LLM)
+    escalation.py  keyword, profile and out-of-scope triggers for handing a
+                   conversation to a human (no LLM)
     evaluation.py  deterministic business rules: per-gift criteria (no LLM)
     orchestrator.py, models.py, schemas.py, db.py, settings.py, main.py
-  tests/           152 tests including a deterministic fake model
+  tests/           160 tests including a deterministic fake model
 frontend/
   src/views/       CreatorSelect, CreatorChat, Analytics, AdminConfig, Logs
   src/components/  ConversationList (the index) + ConversationDetail (the pane),
@@ -690,6 +695,7 @@ frontend/
                    React), Chart (the SVG renderers), CriteriaTable,
                    CriteriaBuilder, GiftRows, AdminFields, ui
 scripts/           smoke_demo.py, debug_turn.py, seed_history.py
+ARCHITECTURE.md    the agent architecture as Mermaid flowcharts
 render.yaml, Dockerfile, DEPLOYMENT.md
 ```
 
