@@ -209,6 +209,28 @@ code,
   background: var(--coral);
 }
 
+/* The analytics legend names each chart segment with a dot of this tone, so every
+   tone has to take the same colour the chart's bar takes -- one of these missing is
+   a legend that reads as a row of identical dots. */
+.dot-coral {
+  background: var(--coral);
+}
+.dot-sage {
+  background: var(--sage);
+}
+.dot-red {
+  background: var(--red);
+}
+.dot-amber {
+  background: var(--amber);
+}
+.dot-slate {
+  background: var(--slate);
+}
+.dot-muted {
+  background: var(--line-strong);
+}
+
 .usage-sep {
   color: var(--line-strong);
 }
