@@ -213,6 +213,31 @@ SAFE_ESCALATION_REPLY = (
 )
 
 
+def second_gift_reply(records: Sequence[Any]) -> str | None:
+    """What to say when a second gift order was refused in this conversation.
+
+    One gift per conversation is a policy fact, not a judgement call, and leaving it to
+    the model to explain is what turns a single refusal into a loop: the creator asks
+    for another gift, the order is refused, the agent asks whether they would like to
+    proceed, and round it goes. The reply has to state the rule.
+    """
+    for record in reversed(records):
+        if getattr(record, "name", None) != "issue_gift":
+            continue
+        result = getattr(record, "result", None) or {}
+        if result.get("error") != "gift_already_issued":
+            continue
+        product = result.get("existing_product") or "your gift"
+        order = result.get("existing_order_id")
+        return (
+            f"I can only send one gift per conversation, and {product} is already on its way"
+            + (f" — order {order}" if order else "")
+            + ". I'm not able to add another one here, I'm afraid. Ask me again in a new "
+            "conversation and I'll take a look at what else you qualify for."
+        )
+    return None
+
+
 @dataclass
 class ReplyVerdict:
     """What the post-reply inspection decided."""
@@ -240,6 +265,19 @@ def inspect_reply(
             summary="Reply withheld: it echoed internal instructions",
             replacement=SAFE_REFUSAL,
             details={"matched_marker": leak, "agent": agent},
+        )
+
+    # A refused second gift is answered from the rule, whatever the model said. This
+    # runs before the claim checks because it is not about what the model claimed --
+    # it is about the creator being told why the thing they asked for cannot happen.
+    second = second_gift_reply(records)
+    if second:
+        return ReplyVerdict(
+            replaced=True,
+            guardrail="one_gift_per_conversation",
+            summary="Reply replaced: one gift per conversation, and it has already been sent",
+            replacement=second,
+            details={"agent": agent, "model_reply": text[:600]},
         )
 
     if not _last_ok(records, "issue_gift"):

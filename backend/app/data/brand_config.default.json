@@ -85,6 +85,6 @@
     "router": "google/gemini-2.5-flash-lite",
     "gift_request": "google/gemini-2.5-flash-lite",
     "general_inquiry": "meta-llama/llama-3.1-8b-instruct",
-    "fallback": "openai/gpt-4.1-nano"
+    "fallback": "openai/gpt-4o-mini"
   }
 }

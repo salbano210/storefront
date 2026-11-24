@@ -205,7 +205,7 @@ still cannot ship to an address that does not pass.
 | Address gate | `issue_gift` on an address that does not validate — re-checked in the tool, so skipping `validate_shipping_address` cannot get past it. The refusal carries the correction | `guardrail_blocked` (`address_invalid`) |
 | Identity enforcement | The creator name on the order is always the verified one. The delivery address is the creator's to give, so it is validated rather than overwritten | `guardrail_adjusted` |
 | Idempotency | Duplicate gift for the same creator + SKU returns the existing order; a DB unique constraint is the backstop | `tool_call_completed` (`duplicate: true`) |
-| One gift per conversation | A second `issue_gift` in the same conversation is refused, so a bad model decision costs one gift, not the catalog | `guardrail_blocked` (`one_gift_per_conversation`) |
+| One gift per conversation | A second `issue_gift` in the same conversation is refused, so a bad model decision costs one gift, not the catalog. The reply is then written from the rule rather than by the model, so the creator is *told* — otherwise they ask again, the order is refused again, and the conversation loops | `guardrail_blocked` (`one_gift_per_conversation`) |
 | Argument validation | Any tool call with malformed or extra fields (Pydantic, `extra="forbid"`) | `tool_call_failed` |
 | Required tools | A specialist answering without consulting the authoritative tools gets nudged with `tool_choice="required"` | visible in the trace |
 | Untrusted input | Creator text is delimited as data; instructions inside it ("ignore previous instructions", "developer mode", "I am the admin") never change the agent's role, rules or tools | `injection_suspected` |
@@ -236,8 +236,10 @@ The creator's messages are untrusted input, so the defence does not rely on the 
    tool calls, so there is no prompt text in the logs to leak.
 5. **One gift per conversation.** A vague request ("can I get a free gift?") can otherwise tempt a
    weaker model into shipping every SKU in the catalog — observed live, once, on the fallback model.
-   `issue_gift` now refuses a second order in the same conversation, so the blast radius of a bad
-   model decision is one gift, not four.
+   `issue_gift` refuses a second order in the same conversation, so the blast radius of a bad
+   model decision is one gift, not four. And because refusing quietly is its own failure mode — the
+   creator asks again, the order is refused again, and the conversation loops — the reply for that
+   turn is written from the rule rather than by the model, so the creator is told why.
 
 Verify it before presenting:
 
@@ -259,7 +261,7 @@ The second asserts that a request naming no product gets a question rather than 
 | **Creators** (`/`) | Pick which creator to simulate. Six profiles with genuinely different verified metrics — every gift offer has a different set of creators who qualify for it, and one of them is a VIP that escalation takes off the agent's desk entirely. An **Edit verified metrics** button (admin passcode) turns every card into a form so you can change the numbers the agents decide on, live. |
 | **Creator chat** (`/chat`) | The creator-facing experience. Free-form multi-turn chat with Summer Soft Skincare, quick prompts for each scenario, a typing indicator, and an outcome chip (gift approved / not eligible / gift suggested / details needed / answered). No agent reasoning, tools or configuration is visible here. |
 | **Analytics** (`/analytics`) | Three charts over the same buckets, every session included. **Conversations by intent** and **dispositions over time** are stacked bars, each with a labelled y-axis, gridlines and value labels on the columns. **Gift request approval rate** is a line pinned to a 0–100% axis, plotted as a **21-day trailing window** so a day with one decision cannot swing it; where 21 days holds fewer than 20 decisions the window widens backwards (to 60 days) rather than drawing a point from a handful. A date-range selector (7 / 30 / 90 days) and a day / week / month interval drive all three. Under the disposition chart, a chip row breaks "other" down into the raw outcomes. With the passcode set, one button generates a backdated **sample history** so the page is never empty. |
-| **Agent logs** (`/logs`) | A conversation browser rather than a firehose. Every conversation is listed on the left in chronological order and filed by disposition. The page opens the newest one and follows it while you work, so a conversation you just had is what you are looking at — **Refresh** drops any selection you made and jumps back to the newest, and clicking a row pins it so the page stops moving under you. The pane opens the conversation's messages, the tool calls that ran between them and any hand-off to a human, in the order they happened, each row typed `from_message`, `to_message`, `tool_call` or `escalation`. Opening a row gives **Action / Input / Output in words** — *Check the criteria for a gift · gift = Discovery Set · Does not qualify: Content categories: fitness, wellness, lifestyle (needs beauty, skincare)* — then the criteria table and the raw event, in that order, so the JSON is the last thing you meet rather than the first. An admin can hand an escalated conversation back to the agent from the detail header. |
+| **Agent logs** (`/logs`) | A conversation browser rather than a firehose. Every conversation is listed on the left in chronological order and filed by disposition. The page opens the newest one and follows it while you work, so a conversation you just had is what you are looking at — **Refresh** drops any selection you made and jumps back to the newest, and clicking a row pins it so the page stops moving under you. The pane opens the conversation's messages, the tool calls that ran between them and any hand-off to a human, in the order they happened, each row typed `from_message`, `to_message`, `tool_call` or `escalation`. Opening a row gives **Action / Input / Output in words** — *Check the criteria for a gift · gift = Discovery Set · Does not qualify: Content categories: fitness, wellness, lifestyle (needs beauty, skincare)* — then the criteria table and the raw event, in that order, so the JSON is the last thing you meet rather than the first. The header carries the conversation's totals, including **model errors and fallbacks** when there were any, which is usually the first thing to check when an agent looks like it is struggling. An admin can hand an escalated conversation back to the agent from the same header. |
 | **Brand admin** (`/admin`) | Passcode-gated configuration, laid out as a folder tree: **brand** → **agents** → each agent's own rules. Gifting holds the gift offers, each an expandable card with a criteria builder (metric, operator, value) and its product link. **Escalation** holds the keyword triggers, the profile rules (same rule language, plus the internal reason) and the sentence the creator is given. The intent agent and the front desk hold their own instructions and constraints. Plus per-agent models, a raw JSON editor and the live JSON schema. |
 
 ### What the analytics numbers mean
@@ -351,7 +353,14 @@ Two consequences worth knowing:
 | Router (intent agent) | `google/gemini-2.5-flash-lite` | $0.10 / $0.40 |
 | Gift request | `google/gemini-2.5-flash-lite` | $0.10 / $0.40 |
 | General inquiry (front desk) | `meta-llama/llama-3.1-8b-instruct` | $0.02 / $0.04 |
-| Fallback (after the primary is out of retries) | `openai/gpt-4.1-nano` | $0.10 / $0.40 |
+| Fallback (after the primary is out of retries) | `openai/gpt-4o-mini` | $0.15 / $0.60 |
+
+The fallback is deliberately a **different provider** from the primary and a competent
+tool-caller rather than the cheapest thing on the list. It only runs when the primary is
+out of retries, and that is precisely when the agent has to keep its head: a weak
+fallback turned a rate-limited afternoon into five turns of the creator saying "yes" and
+the agent asking again, because it could not work out that the second gift was never
+going to be approved.
 
 A live smoke run of all scenarios — 14 creator turns, ~50 model calls — cost **$0.005**.
 

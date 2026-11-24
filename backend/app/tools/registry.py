@@ -542,6 +542,11 @@ async def _issue_gift(args: dict, ctx: ToolContext) -> dict:
             f"A gift was already issued in this conversation ({already_issued.product_name}, order "
             f"{already_issued.order_id}). Do not place another order — confirm the existing one to "
             "the creator.",
+            # Carried on the result as well as the event, so the reply can name the gift
+            # that was already sent rather than talking about "a gift" in the abstract.
+            existing_order_id=already_issued.order_id,
+            existing_product=already_issued.product_name,
+            requested_sku=offer.sku,
         )
 
     await asyncio.sleep(MOCK_API_LATENCY_SECONDS)

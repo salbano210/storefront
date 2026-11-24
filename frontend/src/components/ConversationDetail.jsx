@@ -76,6 +76,14 @@ export default function ConversationDetail({
           { label: 'Tool calls', value: stats.toolCalls },
           { label: 'Tokens', value: stats.tokens ? stats.tokens.toLocaleString() : null },
           { label: 'Cost', value: stats.tokens ? formatters.cost(stats.cost) : null },
+          // Only when there were any: a conversation that fell back to the cheaper
+          // model is worth knowing about before you wonder why the agent struggled.
+          {
+            label: 'Model errors',
+            value: stats.modelErrors
+              ? `${stats.modelErrors}${stats.fallbacks ? ` (${stats.fallbacks} fell back)` : ''}`
+              : null,
+          },
         ]}
       />
 

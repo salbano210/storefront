@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import func, select
 
-from app import evaluation
+from app import evaluation, guardrails
+from app.agents.tool_agent import ToolCallRecord
 from app.db import AsyncSessionLocal
 from app.models import Conversation, Event, GiftOrder
 from app.services import config_manager, data_store
@@ -107,6 +108,60 @@ async def test_one_gift_per_conversation(tool_context):
             and "one_gift_per_conversation" in (row.payload_json or "")
         ]
         assert blocked, "the one-gift rule must be visible in the audit log"
+
+
+async def test_a_second_gift_is_explained_rather_than_retried(tool_context):
+    """The one-gift rule has to reach the creator, not just the audit log.
+
+    Left to the model this is a loop, and not a hypothetical one: on a live conversation
+    every model call was rate-limited, the fallback kept trying to issue all three
+    gifts, and the agent answered each refusal with "would you like to proceed?" while
+    the creator kept saying yes.
+    """
+    async with tool_context("creator_005", conversation_id="conv_second_gift") as (ctx, _db):
+        placed = await execute_tool(
+            "issue_gift",
+            {
+                "creator_name": "Sofia Coppola",
+                "sku": "GT-SERUM-001",
+                "shipping_address": "902 Palm Drive, Miami, FL 33139",
+            },
+            ctx,
+        )
+        refused = await execute_tool(
+            "issue_gift",
+            {
+                "creator_name": "Sofia Coppola",
+                "sku": "GT-CLEANSER-002",
+                "shipping_address": "902 Palm Drive, Miami, FL 33139",
+            },
+            ctx,
+        )
+        assert refused["error"] == "gift_already_issued"
+
+    records = [
+        ToolCallRecord(name="issue_gift", arguments={}, result=placed),
+        ToolCallRecord(name="issue_gift", arguments={}, result=refused),
+    ]
+
+    verdict = guardrails.inspect_reply(
+        "Would you like me to proceed with the order?",
+        records=records,
+        agent="gift_request_agent",
+    )
+
+    assert verdict.replaced, "the model's answer must not be the last word here"
+    assert verdict.guardrail == "one_gift_per_conversation"
+    assert "one gift per conversation" in verdict.replacement
+    assert placed["order_id"] in verdict.replacement
+
+    # A turn that placed its one gift and stopped is left alone.
+    untouched = guardrails.inspect_reply(
+        "Your Barrier Repair Serum is on its way.",
+        records=[ToolCallRecord(name="issue_gift", arguments={}, result=placed)],
+        agent="gift_request_agent",
+    )
+    assert untouched.replaced is False
 
 
 async def test_issue_gift_is_idempotent(tool_context, gift_order_count):

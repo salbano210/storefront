@@ -73,10 +73,16 @@ function shortfalls(checks = []) {
 
 function toolStory(name, args, result, event) {
   const story = buildToolStory(name, args, result, event)
-  if (result && result.ok === false) {
-    // The tool refused: say why in its own words rather than describing the shape of
-    // an error object.
-    return { ...story, output: `Refused: ${result.message || result.error || 'the call failed'}` }
+  // A refusal, or a call that did not complete, is answered from the trace rather than
+  // from the shape of whatever came back: "Refused: undefined" is not an answer, and it
+  // is exactly what a missing result produces if the happy path is left to interpolate.
+  if (result.ok === false || event.status !== 'ok') {
+    return {
+      ...story,
+      output: `Refused: ${
+        result.message || result.error || event.summary || 'the call did not complete'
+      }`,
+    }
   }
   return story
 }
@@ -153,7 +159,7 @@ function buildToolStory(name, args, result, event) {
         input: [`address = ${args.address}`],
         output: result.valid
           ? `Accepted: ${result.normalised}`
-          : `Rejected: ${result.reason}${
+          : `Rejected: ${result.reason || 'the address did not validate'}${
               result.suggestion ? ` · suggested: ${result.suggestion}` : ''
             }`,
       }
@@ -161,13 +167,10 @@ function buildToolStory(name, args, result, event) {
     case 'issue_gift':
       return {
         action: 'Place the gift order',
-        input: [
-          `product = ${args.sku}`,
-          `ship to = ${args.shipping_address}`,
-        ],
-        output: result.ok
+        input: [`product = ${args.sku}`, `ship to = ${args.shipping_address}`],
+        output: result.order_id
           ? `Order ${result.order_id} placed for ${result.product}`
-          : `Refused: ${result.message || result.error}`,
+          : 'The order was not placed',
       }
 
     default:
@@ -298,7 +301,9 @@ export function detailRows(events = []) {
 /** The counts the detail header reports, from the events it loaded.
  *
  * Counted off the rows the pane draws rather than off the event types, so the header
- * cannot claim a message that was never said.
+ * cannot claim a message that was never said. Model errors are counted from the whole
+ * stream: they are not rows in the pane, and a conversation that fell back to the
+ * cheaper model eight times is exactly what somebody troubleshooting needs to know.
  */
 export function conversationStats(events = []) {
   const rows = detailRows(events)
@@ -309,5 +314,7 @@ export function conversationStats(events = []) {
     0
   )
   const cost = events.reduce((total, event) => total + (event.cost_usd || 0), 0)
-  return { messages, toolCalls, tokens, cost }
+  const modelErrors = events.filter((event) => event.type === 'llm_error').length
+  const fallbacks = events.filter((event) => event.type === 'llm_fallback').length
+  return { messages, toolCalls, tokens, cost, modelErrors, fallbacks }
 }
